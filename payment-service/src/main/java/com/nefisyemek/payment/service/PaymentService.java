@@ -45,7 +45,9 @@ public class PaymentService {
         payment.setOrderId(request.orderId());
         payment.setAmount(request.amount());
         payment.setStatus(request.status());
-        return PaymentResponse.from(paymentRepository.save(payment));
+        Payment saved = paymentRepository.save(payment);
+        paymentRepository.flush();
+        return PaymentResponse.from(saved);
     }
 
     @Transactional

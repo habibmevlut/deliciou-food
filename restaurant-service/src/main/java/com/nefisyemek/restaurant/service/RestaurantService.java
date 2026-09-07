@@ -49,7 +49,9 @@ public class RestaurantService {
         restaurant.setAddress(request.address());
         restaurant.setCuisine(request.cuisine());
         restaurant.setOpen(request.open());
-        return RestaurantResponse.from(restaurantRepository.save(restaurant));
+        Restaurant saved = restaurantRepository.save(restaurant);
+        restaurantRepository.flush();
+        return RestaurantResponse.from(saved);
     }
 
     @Transactional

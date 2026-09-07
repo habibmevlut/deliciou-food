@@ -51,7 +51,11 @@ public class OrderService {
         order.setRestaurantId(request.restaurantId());
         order.setTotalAmount(request.totalAmount());
         order.setStatus(request.status());
-        return OrderResponse.from(orderRepository.save(order));
+        // save() managed entity'de @PreUpdate'i hemen çalıştırmaz; flush etmezsek
+        // response eski updatedAt ile döner.
+        Order saved = orderRepository.save(order);
+        orderRepository.flush();
+        return OrderResponse.from(saved);
     }
 
     @Transactional
