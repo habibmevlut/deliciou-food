@@ -8,9 +8,9 @@
 #   payment-service     8082    payment-db      5434
 #   restaurant-service  8083    restaurant-db   5435
 #
-# 5433 kullanılmıyor: birçok makinede başka bir Postgres (ör. socialflow) onu tutar.
-# Bind edilemezse nefis-order-db healthy görünür ama PORTS sütunu boş kalır;
-# IntelliJ localhost:5433 ile yanlış instance'a bağlanır.
+# Java servisleri profile "apps" arkasında: IntelliJ 8081-8083 kullanır,
+# `docker compose up` yalnızca Postgres'leri açar.
+# 5433 kullanılmıyor — socialflow-postgres gibi başka instance'lar onu tutar.
 
 name: nefis-yemek
 
@@ -23,7 +23,7 @@ services:
       POSTGRES_USER: order
       POSTGRES_PASSWORD: order
     ports:
-      - "${ORDER_DB_HOST_PORT:-5436}:5432"
+      - "5436:5432"
     volumes:
       - order-db-data:/var/lib/postgresql/data
     healthcheck:
@@ -70,6 +70,7 @@ services:
     restart: unless-stopped
 
   order-service:
+    profiles: ["apps"]
     build:
       context: .
       dockerfile: Dockerfile
@@ -96,6 +97,7 @@ services:
     restart: unless-stopped
 
   payment-service:
+    profiles: ["apps"]
     build:
       context: .
       dockerfile: Dockerfile
@@ -122,6 +124,7 @@ services:
     restart: unless-stopped
 
   restaurant-service:
+    profiles: ["apps"]
     build:
       context: .
       dockerfile: Dockerfile

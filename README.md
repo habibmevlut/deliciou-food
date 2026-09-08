@@ -56,8 +56,10 @@ Servisler birbirini **çağırmaz**. Her biri izole bir CRUD uygulaması.
 ## Ayağa kaldırma
 
 ```bash
-docker compose up --build
+docker compose --profile apps up --build
 ```
+
+`--profile apps` olmazsa yalnızca üç Postgres ayağa kalkar (IntelliJ için doğru). Java servisleri de container'dan koşsun dersen profile gerekir.
 
 İlk build parent POM + üç servisi derler; 2–5 dakika sürebilir. Hazır olduğunda:
 
@@ -83,7 +85,7 @@ Yerel `application.yml` zaten host portlarına (`5436`/`5434`/`5435`) bakıyor.
 
 Servisleri container içinde değil, IDE'den debug ederek çalıştırmak için Java süreçlerini IntelliJ'e bırak; Postgres'i Docker'da tut.
 
-**IntelliJ ile çalışırken** `docker compose up --build` yapma — 8081/8082/8083 portları çakışır.
+**IntelliJ ile çalışırken** Java container'larını açma. `docker compose up` yalnızca Postgres'leri başlatır (8081–8083 bind edilmez). Tam stack için: `docker compose --profile apps up --build`.
 
 ### 1) Projeyi aç
 
@@ -147,7 +149,7 @@ Community Edition'da aynı URL'leri README'deki curl'lerle veya tarayıcıdan `/
 | --- | --- |
 | `nefis-order-db` healthy ama `PORTS` sütunu boş | Host **5433** başka bir container'da (ör. `socialflow-postgres`). Order DB **5436** kullanır — compose'u güncelleyip `docker compose up -d --force-recreate order-db` |
 | `Connection refused` / `HikariPool` Postgres'e bağlanamıyor | `docker compose ps` — `order-db` 5436, `payment-db` 5434, `restaurant-db` 5435 dinliyor mu? |
-| `Port 8081 was already in use` | Docker'daki Java servisleri de açık: `docker compose stop order-service payment-service restaurant-service` |
+| `Port 8081 was already in use` | Java container'ı da açık kalmış: `docker compose --profile apps stop` |
 | Run config: *module not specified* | Maven Reload; veya `order-service (Maven)` konfigürasyonunu kullan |
 | Flyway / `Schema-validation: missing table` / `password authentication failed` | `localhost:5433` hâlâ socialflow'a gidiyor olabilir. URL `localhost:5436/orderdb`, user `order` olmalı |
 | SDK is not defined | Project Structure → SDK 21 ekle, sonra Maven Reload |
