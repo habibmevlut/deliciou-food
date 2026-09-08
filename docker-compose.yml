@@ -4,9 +4,13 @@
 # Servisler birbirinin DB'sine bağlanmaz; ileride sadece REST veya Kafka ile konuşurlar.
 #
 # Port haritası (host):
-#   order-service       8081    order-db        5433
+#   order-service       8081    order-db        5436
 #   payment-service     8082    payment-db      5434
 #   restaurant-service  8083    restaurant-db   5435
+#
+# 5433 kullanılmıyor: birçok makinede başka bir Postgres (ör. socialflow) onu tutar.
+# Bind edilemezse nefis-order-db healthy görünür ama PORTS sütunu boş kalır;
+# IntelliJ localhost:5433 ile yanlış instance'a bağlanır.
 
 name: nefis-yemek
 
@@ -19,7 +23,7 @@ services:
       POSTGRES_USER: order
       POSTGRES_PASSWORD: order
     ports:
-      - "5433:5432"
+      - "${ORDER_DB_HOST_PORT:-5436}:5432"
     volumes:
       - order-db-data:/var/lib/postgresql/data
     healthcheck:

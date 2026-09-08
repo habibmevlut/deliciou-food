@@ -21,7 +21,7 @@ Bu yüzden her servisin **kendi PostgreSQL instance'ı** var. `payment.order_id`
 ## Mimari (M0)
 
 ```
-                 ┌─────────────────┐   :5433   ┌──────────────┐
+                 ┌─────────────────┐   :5436   ┌──────────────┐
    :8081  REST   │  order-service  │──────────▶│   order-db   │
                  └─────────────────┘           └──────────────┘
 
@@ -43,7 +43,7 @@ Servisler birbirini **çağırmaz**. Her biri izole bir CRUD uygulaması.
 | order-service | 8081 | 8081 | — |
 | payment-service | 8082 | 8082 | — |
 | restaurant-service | 8083 | 8083 | — |
-| order-db | 5433 | 5432 | `order` / `orderdb` |
+| order-db | 5436 | 5432 | `order` / `orderdb` |
 | payment-db | 5434 | 5432 | `payment` / `paymentdb` |
 | restaurant-db | 5435 | 5432 | `restaurant` / `restaurantdb` |
 
@@ -77,7 +77,7 @@ docker compose up order-db payment-db restaurant-db
 # başka terminallerde payment-service ve restaurant-service
 ```
 
-Yerel `application.yml` zaten host portlarına (`5433`/`5434`/`5435`) bakıyor.
+Yerel `application.yml` zaten host portlarına (`5436`/`5434`/`5435`) bakıyor.
 
 ## IntelliJ IDEA ile derleme ve çalıştırma
 
@@ -103,8 +103,11 @@ Servisleri container içinde değil, IDE'den debug ederek çalıştırmak için 
 Terminal (IntelliJ altındaki) veya harici shell:
 
 ```bash
-docker compose up -d order-db payment-db restaurant-db
+docker compose up -d --force-recreate order-db payment-db restaurant-db
+docker compose ps
 ```
+
+`nefis-order-db` satırında `0.0.0.0:5436->5432/tcp` görünmeli. `PORTS` boşsa host portu bind olmamıştır; IntelliJ yanlış Postgres'e gider.
 
 Üç Postgres ayağa kalkmadan servisler Flyway/`ddl-auto: validate` yüzünden **fail** olur.
 
@@ -142,10 +145,11 @@ Community Edition'da aynı URL'leri README'deki curl'lerle veya tarayıcıdan `/
 
 | Belirti | Çözüm |
 | --- | --- |
-| `Connection refused` / `HikariPool` Postgres'e bağlanamıyor | `docker compose ps` — `order-db` 5433, `payment-db` 5434, `restaurant-db` 5435 dinliyor mu? |
+| `nefis-order-db` healthy ama `PORTS` sütunu boş | Host **5433** başka bir container'da (ör. `socialflow-postgres`). Order DB **5436** kullanır — compose'u güncelleyip `docker compose up -d --force-recreate order-db` |
+| `Connection refused` / `HikariPool` Postgres'e bağlanamıyor | `docker compose ps` — `order-db` 5436, `payment-db` 5434, `restaurant-db` 5435 dinliyor mu? |
 | `Port 8081 was already in use` | Docker'daki Java servisleri de açık: `docker compose stop order-service payment-service restaurant-service` |
 | Run config: *module not specified* | Maven Reload; veya `order-service (Maven)` konfigürasyonunu kullan |
-| Flyway / `Schema-validation: missing table` | Yanlış DB'ye gidiyor — URL `localhost:5433/orderdb` olmalı, 5432 değil |
+| Flyway / `Schema-validation: missing table` / `password authentication failed` | `localhost:5433` hâlâ socialflow'a gidiyor olabilir. URL `localhost:5436/orderdb`, user `order` olmalı |
 | SDK is not defined | Project Structure → SDK 21 ekle, sonra Maven Reload |
 
 ## Test curl komutları
