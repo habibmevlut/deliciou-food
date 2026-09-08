@@ -2,50 +2,97 @@
 
 Kurgusal bir yemek sipariş platformu. Amaç production'a çıkmak değil; mikroservis pattern'lerini (Saga, CQRS, Outbox, Circuit Breaker, API Gateway, Distributed Tracing) gerçek kodla denemek.
 
-Şu an **Milestone 0**: iskelet + Database per Service.
+Şu an **Milestone 1**: kalan servisler + API Gateway. Dış dünya yalnızca **:8080** üzerinden konuşur.
 
-## Neden Database per Service?
+## Neden API Gateway?
 
-Üç servis aynı Postgres'e bağlansaydı "mikroservis" sadece process sınırında kalırdı: `order-service` `JOIN restaurants` yazabilir, şema değişikliği üç ekibi kırardı.
+Altı servisin altı portunu istemciye açmak, URL'leri ve (Milestone 4'te) JWT'yi her yerde kopyalamak demek. Gateway tek kapı: path'e bakıp isteği doğru servise iletir. Servisler hâlâ **Database per Service** — birbirinin Postgres'ine dokunmazlar.
 
-Bu yüzden her servisin **kendi PostgreSQL instance'ı** var. `payment.order_id` başka DB'deki siparişe FK **değil**; sadece bir UUID. Bütünlük ileride Kafka event'leri ve (gerektiğinde) REST ile sağlanacak.
-
-## Milestone 0'da ne var / ne yok
+## Milestone 1'de ne var / ne yok
 
 | Var | Yok (sonraki milestone) |
 | --- | --- |
-| 3 servis, 3 Postgres, Flyway, CRUD REST | Kafka, Saga, Outbox |
-| Katmanlı paket yapısı (`controller` / `service` / `repository` / `domain` / `event`) | API Gateway |
-| Actuator `/actuator/health` | JWT, Resilience4j, Zipkin |
+| 6 iş servisi + api-gateway, 6 Postgres, Flyway, CRUD | Kafka, Saga, Outbox |
+| Gateway route'ları (`/api/**` → ilgili servis) | JWT, Resilience4j, Zipkin |
+| notification-service REST + console mock | Kafka consumer |
 
-## Mimari (M0)
+## Mimari (M1)
 
 ```
-                 ┌─────────────────┐   :5436   ┌──────────────┐
-   :8081  REST   │  order-service  │──────────▶│   order-db   │
-                 └─────────────────┘           └──────────────┘
-
-                 ┌─────────────────┐   :5434   ┌──────────────┐
-   :8082  REST   │ payment-service │──────────▶│  payment-db  │
-                 └─────────────────┘           └──────────────┘
-
-                 ┌─────────────────┐   :5435   ┌──────────────┐
-   :8083  REST   │restaurant-svc   │──────────▶│restaurant-db │
-                 └─────────────────┘           └──────────────┘
+                    ┌─────────────┐
+         :8080      │ api-gateway │
+                    └──────┬──────┘
+           ┌─────────┬─────┼─────┬─────────┬──────────┐
+           ▼         ▼     ▼     ▼         ▼          ▼
+        customer  restaurant order payment delivery notification
+        :8084      :8083    :8081 :8082    :8085      :8086
+           ▼         ▼       ▼      ▼        ▼          ▼
+         PG 5437   PG 5435  PG 5436 PG 5434  PG 5438    PG 5439
 ```
 
-Servisler birbirini **çağırmaz**. Her biri izole bir CRUD uygulaması.
+## Gateway route tablosu
+
+| Path | Hedef (IDE) | Docker URI |
+| --- | --- | --- |
+| `/api/customers/**` | localhost:8084 | http://customer-service:8084 |
+| `/api/restaurants/**` | localhost:8083 | http://restaurant-service:8083 |
+| `/api/orders/**` | localhost:8081 | http://order-service:8081 |
+| `/api/payments/**` | localhost:8082 | http://payment-service:8082 |
+| `/api/deliveries/**` | localhost:8085 | http://delivery-service:8085 |
+| `/api/notifications/**` | localhost:8086 | http://notification-service:8086 |
+| `/actuator/health` | gateway'in kendisi | — |
+
+Prefix strip yok: backend zaten aynı path'i dinliyor.
+
+Gateway üzerinden örnek:
+
+```bash
+curl http://localhost:8080/actuator/health
+
+curl -sS -X POST http://localhost:8080/api/customers \
+  -H 'Content-Type: application/json' \
+  -d '{"fullName":"Ali Veli","email":"ali@example.com","phone":"5551112233"}'
+
+curl -sS -X POST http://localhost:8080/api/restaurants \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Adana Sofrası","address":"Kadıköy","cuisine":"Türk","open":true}'
+
+curl -sS -X POST http://localhost:8080/api/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"customerId":"<CUSTOMER_ID>","restaurantId":"<RESTAURANT_ID>","totalAmount":149.90}'
+
+curl -sS -X POST http://localhost:8080/api/payments \
+  -H 'Content-Type: application/json' \
+  -d '{"orderId":"<ORDER_ID>","amount":149.90}'
+
+curl -sS -X POST http://localhost:8080/api/deliveries \
+  -H 'Content-Type: application/json' \
+  -d '{"orderId":"<ORDER_ID>","courierName":"Ahmet"}'
+
+curl -sS -X POST http://localhost:8080/api/notifications \
+  -H 'Content-Type: application/json' \
+  -d '{"recipient":"5551112233","channel":"SMS","message":"Siparis alindi"}'
+```
+
+notification-service konsola `[MOCK SMS] to=...` yazar; gerçek SMS yok.
 
 ## Portlar
 
-| Servis / DB | Host port | İç port | Kullanıcı / DB |
-| --- | --- | --- | --- |
-| order-service | 8081 | 8081 | — |
-| payment-service | 8082 | 8082 | — |
-| restaurant-service | 8083 | 8083 | — |
-| order-db | 5436 | 5432 | `order` / `orderdb` |
-| payment-db | 5434 | 5432 | `payment` / `paymentdb` |
-| restaurant-db | 5435 | 5432 | `restaurant` / `restaurantdb` |
+| Servis / DB | Host port | Kullanıcı / DB |
+| --- | --- | --- |
+| api-gateway | 8080 | — |
+| order-service | 8081 | — |
+| payment-service | 8082 | — |
+| restaurant-service | 8083 | — |
+| customer-service | 8084 | — |
+| delivery-service | 8085 | — |
+| notification-service | 8086 | — |
+| order-db | 5436 | `order` / `orderdb` |
+| payment-db | 5434 | `payment` / `paymentdb` |
+| restaurant-db | 5435 | `restaurant` / `restaurantdb` |
+| customer-db | 5437 | `customer` / `customerdb` |
+| delivery-db | 5438 | `delivery` / `deliverydb` |
+| notification-db | 5439 | `notification` / `notificationdb` |
 
 ## Gereksinimler
 
@@ -59,33 +106,27 @@ Servisler birbirini **çağırmaz**. Her biri izole bir CRUD uygulaması.
 docker compose --profile apps up --build
 ```
 
-`--profile apps` olmazsa yalnızca üç Postgres ayağa kalkar (IntelliJ için doğru). Java servisleri de container'dan koşsun dersen profile gerekir.
+`--profile apps` olmazsa yalnızca Postgres ayağa kalkar (IntelliJ için doğru). Java + gateway container'dan koşsun dersen profile gerekir.
 
-İlk build parent POM + üç servisi derler; 2–5 dakika sürebilir. Hazır olduğunda:
+İlk build uzun sürebilir. Dışarıdan yalnızca gateway:
 
 ```bash
-curl http://localhost:8081/actuator/health
-curl http://localhost:8082/actuator/health
-curl http://localhost:8083/actuator/health
+curl http://localhost:8080/actuator/health
+curl http://localhost:8080/api/restaurants
 ```
-
-Üçü de `"status":"UP"` dönmeli.
 
 Sadece veritabanlarını ayağa kaldırıp servisleri IDE'den çalıştırmak için:
 
 ```bash
-docker compose up order-db payment-db restaurant-db
-./mvnw -pl order-service spring-boot:run
-# başka terminallerde payment-service ve restaurant-service
+docker compose up -d
+# IntelliJ: Nefis Yemek: tum servisler (gateway dahil)
 ```
-
-Yerel `application.yml` zaten host portlarına (`5436`/`5434`/`5435`) bakıyor.
 
 ## IntelliJ IDEA ile derleme ve çalıştırma
 
 Servisleri container içinde değil, IDE'den debug ederek çalıştırmak için Java süreçlerini IntelliJ'e bırak; Postgres'i Docker'da tut.
 
-**IntelliJ ile çalışırken** Java container'larını açma. `docker compose up` yalnızca Postgres'leri başlatır (8081–8083 bind edilmez). Tam stack için: `docker compose --profile apps up --build`.
+**IntelliJ ile çalışırken** Java container'larını açma. `docker compose up` yalnızca Postgres'leri başlatır. Tam stack için: `docker compose --profile apps up --build`.
 
 ### 1) Projeyi aç
 
@@ -105,7 +146,7 @@ Servisleri container içinde değil, IDE'den debug ederek çalıştırmak için 
 Terminal (IntelliJ altındaki) veya harici shell:
 
 ```bash
-docker compose up -d --force-recreate order-db payment-db restaurant-db
+docker compose up -d
 docker compose ps
 ```
 
@@ -125,15 +166,15 @@ Run dropdown'da hazır konfigürasyonlar var:
 
 | Konfigürasyon | Ne yapar |
 | --- | --- |
-| **Nefis Yemek: 3 servis** | Üç uygulamayı birden başlatır (önerilen) |
+| **Nefis Yemek: tum servisler** | Gateway + 6 iş servisi (önerilen) |
 | `order-service` / `payment-service` / `restaurant-service` | `main` metodundan Application olarak çalıştırır |
 | `*-service (Maven)` | `spring-boot:run` — modül adı IntelliJ'de farklıysa bunu kullan |
 
-**Nefis Yemek: 3 servis** → yeşil Run (veya Debug).
+**Nefis Yemek: tum servisler** → yeşil Run (veya Debug). Gateway en son ayağa kalkabilir; 8080 dinlemeden istek atma.
 
-Konsolda `Started OrderServiceApplication`, `Started PaymentServiceApplication`, `Started RestaurantServiceApplication` görünmeli.
+Konsolda `Started ApiGatewayApplication` ve diğer `*ServiceApplication` satırları görünmeli.
 
-`main` yanındaki yeşil üçgene basmak da aynı: `OrderServiceApplication` → Run.
+`main` yanındaki yeşil üçgene basmak da aynı.
 
 **spring-boot-devtools** var: kaynak kaydedince (Build → Build Project, varsayılan Ctrl/Cmd+F9) uygulama kendini yeniden başlatır.
 
@@ -167,7 +208,7 @@ chmod +x http/smoke.sh
 ./http/smoke.sh
 ```
 
-Health, üç servisin CRUD'u, 404 ve 400'ü sırayla çağırır; `OK` yazmalı.
+Health, gateway üzerinden CRUD, 404 ve 400; `OK` yazmalı.
 
 Postman/Insomnia istersen: `http/Nefis-Yemek.postman_collection.json` → Import.
 
@@ -198,4 +239,4 @@ Hibernate `ddl-auto: validate` — şemayı JPA üretmez, Flyway üretir. Böyle
 
 ## Sonraki adım
 
-Milestone 1: `customer-service`, `delivery-service`, `notification-service`, `api-gateway`. Bundan sonra dış dünya servislere doğrudan değil, gateway üzerinden konuşacak.
+Milestone 2: Kafka + orchestration-based Saga ("Sipariş Ver" akışı).

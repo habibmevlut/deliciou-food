@@ -9,6 +9,10 @@ COPY mvnw pom.xml ./
 COPY order-service/pom.xml order-service/pom.xml
 COPY payment-service/pom.xml payment-service/pom.xml
 COPY restaurant-service/pom.xml restaurant-service/pom.xml
+COPY customer-service/pom.xml customer-service/pom.xml
+COPY delivery-service/pom.xml delivery-service/pom.xml
+COPY notification-service/pom.xml notification-service/pom.xml
+COPY api-gateway/pom.xml api-gateway/pom.xml
 
 RUN chmod +x mvnw \
     && ./mvnw -B -q -DskipTests dependency:go-offline || true
@@ -16,6 +20,10 @@ RUN chmod +x mvnw \
 COPY order-service order-service
 COPY payment-service payment-service
 COPY restaurant-service restaurant-service
+COPY customer-service customer-service
+COPY delivery-service delivery-service
+COPY notification-service notification-service
+COPY api-gateway api-gateway
 
 ARG MODULE
 RUN ./mvnw -B -pl ${MODULE} -am package -DskipTests

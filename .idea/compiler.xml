@@ -6,6 +6,10 @@
     </annotationProcessing>
     <bytecodeTargetLevel target="21">
       <module name="nefis-yemek" target="21" />
+      <module name="api-gateway" target="21" />
+      <module name="customer-service" target="21" />
+      <module name="delivery-service" target="21" />
+      <module name="notification-service" target="21" />
       <module name="order-service" target="21" />
       <module name="payment-service" target="21" />
       <module name="restaurant-service" target="21" />

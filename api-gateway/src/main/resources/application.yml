@@ -1,0 +1,52 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      # Prefix strip yok: backend'ler zaten /api/orders, /api/payments... dinliyor.
+      # URI'ler env ile override: Docker'da http://order-service:8081, IDE'de localhost.
+      routes:
+        - id: customer-service
+          uri: ${CUSTOMER_SERVICE_URI:http://localhost:8084}
+          predicates:
+            - Path=/api/customers/**
+        - id: restaurant-service
+          uri: ${RESTAURANT_SERVICE_URI:http://localhost:8083}
+          predicates:
+            - Path=/api/restaurants/**
+        - id: order-service
+          uri: ${ORDER_SERVICE_URI:http://localhost:8081}
+          predicates:
+            - Path=/api/orders/**
+        - id: payment-service
+          uri: ${PAYMENT_SERVICE_URI:http://localhost:8082}
+          predicates:
+            - Path=/api/payments/**
+        - id: delivery-service
+          uri: ${DELIVERY_SERVICE_URI:http://localhost:8085}
+          predicates:
+            - Path=/api/deliveries/**
+        - id: notification-service
+          uri: ${NOTIFICATION_SERVICE_URI:http://localhost:8086}
+          predicates:
+            - Path=/api/notifications/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+    gateway:
+      enabled: true
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:}]"

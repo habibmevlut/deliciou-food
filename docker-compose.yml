@@ -1,22 +1,30 @@
-# Nefis Yemek — Milestone 0
+# Nefis Yemek — Milestone 1
 #
 # Database per Service: her iş yeteneğinin kendi PostgreSQL instance'ı var.
-# Servisler birbirinin DB'sine bağlanmaz; ileride sadece REST veya Kafka ile konuşurlar.
+# Dış trafik yalnızca api-gateway :8080 üzerinden girer.
 #
-# Port haritası (host):
-#   order-service       8081    order-db        5436
-#   payment-service     8082    payment-db      5434
-#   restaurant-service  8083    restaurant-db   5435
+# Host portlar:
+#   api-gateway         8080
+#   order-service       8081    order-db          5436
+#   payment-service     8082    payment-db        5434
+#   restaurant-service  8083    restaurant-db     5435
+#   customer-service    8084    customer-db       5437
+#   delivery-service    8085    delivery-db       5438
+#   notification-service 8086   notification-db   5439
 #
-# Java servisleri profile "apps" arkasında: IntelliJ 8081-8083 kullanır,
-# `docker compose up` yalnızca Postgres'leri açar.
-# 5433 kullanılmıyor — socialflow-postgres gibi başka instance'lar onu tutar.
+# 5433 kullanılmıyor (socialflow vs.).
+# `docker compose up` yalnızca Postgres.
+# Tam stack: `docker compose --profile apps up --build`
 
 name: nefis-yemek
 
+x-postgres: &postgres
+  image: postgres:16-alpine
+  restart: unless-stopped
+
 services:
   order-db:
-    image: postgres:16-alpine
+    <<: *postgres
     container_name: nefis-order-db
     environment:
       POSTGRES_DB: orderdb
@@ -31,10 +39,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    restart: unless-stopped
 
   payment-db:
-    image: postgres:16-alpine
+    <<: *postgres
     container_name: nefis-payment-db
     environment:
       POSTGRES_DB: paymentdb
@@ -49,10 +56,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    restart: unless-stopped
 
   restaurant-db:
-    image: postgres:16-alpine
+    <<: *postgres
     container_name: nefis-restaurant-db
     environment:
       POSTGRES_DB: restaurantdb
@@ -67,27 +73,71 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    restart: unless-stopped
+
+  customer-db:
+    <<: *postgres
+    container_name: nefis-customer-db
+    environment:
+      POSTGRES_DB: customerdb
+      POSTGRES_USER: customer
+      POSTGRES_PASSWORD: customer
+    ports:
+      - "5437:5432"
+    volumes:
+      - customer-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customer -d customerdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  delivery-db:
+    <<: *postgres
+    container_name: nefis-delivery-db
+    environment:
+      POSTGRES_DB: deliverydb
+      POSTGRES_USER: delivery
+      POSTGRES_PASSWORD: delivery
+    ports:
+      - "5438:5432"
+    volumes:
+      - delivery-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U delivery -d deliverydb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  notification-db:
+    <<: *postgres
+    container_name: nefis-notification-db
+    environment:
+      POSTGRES_DB: notificationdb
+      POSTGRES_USER: notification
+      POSTGRES_PASSWORD: notification
+    ports:
+      - "5439:5432"
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification -d notificationdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   order-service:
     profiles: ["apps"]
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        MODULE: order-service
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: order-service } }
     image: nefis-yemek/order-service:0.1.0
     container_name: nefis-order-service
-    ports:
-      - "8081:8081"
+    ports: ["8081:8081"]
     environment:
       SERVER_PORT: 8081
       SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/orderdb
       SPRING_DATASOURCE_USERNAME: order
       SPRING_DATASOURCE_PASSWORD: order
     depends_on:
-      order-db:
-        condition: service_healthy
+      order-db: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
       interval: 10s
@@ -98,23 +148,17 @@ services:
 
   payment-service:
     profiles: ["apps"]
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        MODULE: payment-service
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: payment-service } }
     image: nefis-yemek/payment-service:0.1.0
     container_name: nefis-payment-service
-    ports:
-      - "8082:8082"
+    ports: ["8082:8082"]
     environment:
       SERVER_PORT: 8082
       SPRING_DATASOURCE_URL: jdbc:postgresql://payment-db:5432/paymentdb
       SPRING_DATASOURCE_USERNAME: payment
       SPRING_DATASOURCE_PASSWORD: payment
     depends_on:
-      payment-db:
-        condition: service_healthy
+      payment-db: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
       interval: 10s
@@ -125,25 +169,111 @@ services:
 
   restaurant-service:
     profiles: ["apps"]
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        MODULE: restaurant-service
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: restaurant-service } }
     image: nefis-yemek/restaurant-service:0.1.0
     container_name: nefis-restaurant-service
-    ports:
-      - "8083:8083"
+    ports: ["8083:8083"]
     environment:
       SERVER_PORT: 8083
       SPRING_DATASOURCE_URL: jdbc:postgresql://restaurant-db:5432/restaurantdb
       SPRING_DATASOURCE_USERNAME: restaurant
       SPRING_DATASOURCE_PASSWORD: restaurant
     depends_on:
-      restaurant-db:
-        condition: service_healthy
+      restaurant-db: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  customer-service:
+    profiles: ["apps"]
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: customer-service } }
+    image: nefis-yemek/customer-service:0.1.0
+    container_name: nefis-customer-service
+    ports: ["8084:8084"]
+    environment:
+      SERVER_PORT: 8084
+      SPRING_DATASOURCE_URL: jdbc:postgresql://customer-db:5432/customerdb
+      SPRING_DATASOURCE_USERNAME: customer
+      SPRING_DATASOURCE_PASSWORD: customer
+    depends_on:
+      customer-db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  delivery-service:
+    profiles: ["apps"]
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: delivery-service } }
+    image: nefis-yemek/delivery-service:0.1.0
+    container_name: nefis-delivery-service
+    ports: ["8085:8085"]
+    environment:
+      SERVER_PORT: 8085
+      SPRING_DATASOURCE_URL: jdbc:postgresql://delivery-db:5432/deliverydb
+      SPRING_DATASOURCE_USERNAME: delivery
+      SPRING_DATASOURCE_PASSWORD: delivery
+    depends_on:
+      delivery-db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  notification-service:
+    profiles: ["apps"]
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: notification-service } }
+    image: nefis-yemek/notification-service:0.1.0
+    container_name: nefis-notification-service
+    ports: ["8086:8086"]
+    environment:
+      SERVER_PORT: 8086
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notificationdb
+      SPRING_DATASOURCE_USERNAME: notification
+      SPRING_DATASOURCE_PASSWORD: notification
+    depends_on:
+      notification-db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  api-gateway:
+    profiles: ["apps"]
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: api-gateway } }
+    image: nefis-yemek/api-gateway:0.1.0
+    container_name: nefis-api-gateway
+    ports: ["8080:8080"]
+    environment:
+      SERVER_PORT: 8080
+      ORDER_SERVICE_URI: http://order-service:8081
+      PAYMENT_SERVICE_URI: http://payment-service:8082
+      RESTAURANT_SERVICE_URI: http://restaurant-service:8083
+      CUSTOMER_SERVICE_URI: http://customer-service:8084
+      DELIVERY_SERVICE_URI: http://delivery-service:8085
+      NOTIFICATION_SERVICE_URI: http://notification-service:8086
+    depends_on:
+      order-service: { condition: service_healthy }
+      payment-service: { condition: service_healthy }
+      restaurant-service: { condition: service_healthy }
+      customer-service: { condition: service_healthy }
+      delivery-service: { condition: service_healthy }
+      notification-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -154,3 +284,6 @@ volumes:
   order-db-data:
   payment-db-data:
   restaurant-db-data:
+  customer-db-data:
+  delivery-db-data:
+  notification-db-data:

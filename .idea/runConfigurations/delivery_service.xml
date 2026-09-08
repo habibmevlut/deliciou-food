@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="delivery-service" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="com.nefisyemek.delivery.DeliveryServiceApplication" />
+    <module name="delivery-service" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/delivery-service" />
+    <shortenClasspath name="ARGS_FILE" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

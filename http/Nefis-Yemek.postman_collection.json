@@ -1,272 +1,91 @@
 {
   "info": {
     "name": "Nefis Yemek",
-    "description": "Milestone 0 CRUD: restaurant / order / payment. IntelliJ veya docker compose sonrası Import → Postman, Insomnia, Bruno, Thunder Client.",
+    "description": "Milestone 1 — tüm istekler api-gateway :8080 üzerinden.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "orderBase", "value": "http://localhost:8081" },
-    { "key": "paymentBase", "value": "http://localhost:8082" },
-    { "key": "restaurantBase", "value": "http://localhost:8083" },
-    { "key": "customerId", "value": "11111111-1111-1111-1111-111111111111" },
+    { "key": "gateway", "value": "http://localhost:8080" },
+    { "key": "customerId", "value": "" },
     { "key": "restaurantId", "value": "" },
-    { "key": "orderId", "value": "" },
-    { "key": "paymentId", "value": "" }
+    { "key": "orderId", "value": "" }
   ],
   "item": [
     {
-      "name": "Health",
-      "item": [
-        {
-          "name": "order-service health",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{orderBase}}/actuator/health"
-          }
-        },
-        {
-          "name": "payment-service health",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{paymentBase}}/actuator/health"
-          }
-        },
-        {
-          "name": "restaurant-service health",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{restaurantBase}}/actuator/health"
-          }
-        }
-      ]
+      "name": "Gateway health",
+      "request": { "method": "GET", "header": [], "url": "{{gateway}}/actuator/health" }
     },
     {
-      "name": "restaurant-service",
-      "item": [
-        {
-          "name": "Create restaurant",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "  pm.collectionVariables.set('restaurantId', pm.response.json().id);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Adana Sofrası\",\n  \"address\": \"Caferağa Mah. Kadıköy / İstanbul\",\n  \"cuisine\": \"Türk\",\n  \"open\": true\n}"
-            },
-            "url": "{{restaurantBase}}/api/restaurants"
-          }
-        },
-        {
-          "name": "List restaurants",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{restaurantBase}}/api/restaurants"
-          }
-        },
-        {
-          "name": "Get restaurant",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{restaurantBase}}/api/restaurants/{{restaurantId}}"
-          }
-        },
-        {
-          "name": "Update restaurant (close)",
-          "request": {
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Adana Sofrası\",\n  \"address\": \"Caferağa Mah. Kadıköy / İstanbul\",\n  \"cuisine\": \"Türk\",\n  \"open\": false\n}"
-            },
-            "url": "{{restaurantBase}}/api/restaurants/{{restaurantId}}"
-          }
-        },
-        {
-          "name": "Delete restaurant",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": "{{restaurantBase}}/api/restaurants/{{restaurantId}}"
-          }
-        }
-      ]
+      "name": "Create restaurant",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "if (pm.response.code === 201) pm.collectionVariables.set('restaurantId', pm.response.json().id);"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"name\": \"Adana Sofrası\",\n  \"address\": \"Kadıköy\",\n  \"cuisine\": \"Türk\",\n  \"open\": true\n}" },
+        "url": "{{gateway}}/api/restaurants"
+      }
     },
     {
-      "name": "order-service",
-      "item": [
-        {
-          "name": "Create order",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "  const body = pm.response.json();",
-                  "  pm.collectionVariables.set('orderId', body.id);",
-                  "  pm.collectionVariables.set('customerId', body.customerId);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"restaurantId\": \"22222222-2222-2222-2222-222222222222\",\n  \"totalAmount\": 149.90\n}"
-            },
-            "url": "{{orderBase}}/api/orders"
-          }
-        },
-        {
-          "name": "List orders",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{orderBase}}/api/orders"
-          }
-        },
-        {
-          "name": "Get order",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{orderBase}}/api/orders/{{orderId}}"
-          }
-        },
-        {
-          "name": "Update order (CONFIRMED)",
-          "request": {
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"restaurantId\": \"22222222-2222-2222-2222-222222222222\",\n  \"totalAmount\": 149.90,\n  \"status\": \"CONFIRMED\"\n}"
-            },
-            "url": "{{orderBase}}/api/orders/{{orderId}}"
-          }
-        },
-        {
-          "name": "Delete order",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": "{{orderBase}}/api/orders/{{orderId}}"
-          }
-        }
-      ]
+      "name": "Create customer",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "if (pm.response.code === 201) pm.collectionVariables.set('customerId', pm.response.json().id);"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"fullName\": \"Ali Veli\",\n  \"email\": \"ali@example.com\",\n  \"phone\": \"5551112233\"\n}" },
+        "url": "{{gateway}}/api/customers"
+      }
     },
     {
-      "name": "payment-service",
-      "item": [
-        {
-          "name": "Create payment",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "  pm.collectionVariables.set('paymentId', pm.response.json().id);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"amount\": 149.90\n}"
-            },
-            "url": "{{paymentBase}}/api/payments"
-          }
-        },
-        {
-          "name": "List payments",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{paymentBase}}/api/payments"
-          }
-        },
-        {
-          "name": "Get payment",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{paymentBase}}/api/payments/{{paymentId}}"
-          }
-        },
-        {
-          "name": "Update payment (CAPTURED)",
-          "request": {
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"amount\": 149.90,\n  \"status\": \"CAPTURED\"\n}"
-            },
-            "url": "{{paymentBase}}/api/payments/{{paymentId}}"
-          }
-        },
-        {
-          "name": "Delete payment",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": "{{paymentBase}}/api/payments/{{paymentId}}"
-          }
-        }
-      ]
+      "name": "Add address",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"title\": \"Ev\",\n  \"street\": \"Caferağa\",\n  \"city\": \"İstanbul\"\n}" },
+        "url": "{{gateway}}/api/customers/{{customerId}}/addresses"
+      }
     },
     {
-      "name": "Errors",
-      "item": [
-        {
-          "name": "Order 404",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{orderBase}}/api/orders/00000000-0000-0000-0000-000000000000"
-          }
-        },
-        {
-          "name": "Order 400 (negative amount)",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"customerId\": \"00000000-0000-0000-0000-000000000001\",\n  \"restaurantId\": \"00000000-0000-0000-0000-000000000002\",\n  \"totalAmount\": -1\n}"
-            },
-            "url": "{{orderBase}}/api/orders"
-          }
-        }
-      ]
+      "name": "Create order",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "if (pm.response.code === 201) pm.collectionVariables.set('orderId', pm.response.json().id);"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"restaurantId\": \"{{restaurantId}}\",\n  \"totalAmount\": 149.90\n}" },
+        "url": "{{gateway}}/api/orders"
+      }
+    },
+    {
+      "name": "Create payment",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"amount\": 149.90\n}" },
+        "url": "{{gateway}}/api/payments"
+      }
+    },
+    {
+      "name": "Assign courier",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"courierName\": \"Ahmet\"\n}" },
+        "url": "{{gateway}}/api/deliveries"
+      }
+    },
+    {
+      "name": "Send mock SMS",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"recipient\": \"5551112233\",\n  \"channel\": \"SMS\",\n  \"message\": \"Siparis alindi\"\n}" },
+        "url": "{{gateway}}/api/notifications"
+      }
     }
   ]
 }
