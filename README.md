@@ -154,121 +154,17 @@ Community Edition'da aynı URL'leri README'deki curl'lerle veya tarayıcıdan `/
 | Flyway / `Schema-validation: missing table` / `password authentication failed` | `localhost:5433` hâlâ socialflow'a gidiyor olabilir. URL `localhost:5436/orderdb`, user `order` olmalı |
 | SDK is not defined | Project Structure → SDK 21 ekle, sonra Maven Reload |
 
-## Test curl komutları
+## API koleksiyonu (tek import)
 
-Aşağıdaki komutlar `docker compose up` sonrası her üç servisi uçtan uca doğrular.
+Tüm health + CRUD + hata istekleri tek dosyada:
 
-### 1) restaurant-service — restoran oluştur, oku, güncelle, sil
+**`http/Nefis-Yemek.postman_collection.json`**
 
-```bash
-# Oluştur (201 + Location)
-curl -sS -X POST http://localhost:8083/api/restaurants \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "Adana Sofrası",
-    "address": "Caferağa Mah. Kadıköy / İstanbul",
-    "cuisine": "Türk",
-    "open": true
-  }' | tee /tmp/restaurant.json
+- **Postman:** Import → File → bu JSON
+- **Insomnia / Bruno / Thunder Client:** aynı dosyayı Postman v2.1 olarak import et
+- **IntelliJ HTTP Client:** `http/api.http` (aynı istekler, IDE içinde yeşil Run)
 
-RESTAURANT_ID=$(python3 -c "import json; print(json.load(open('/tmp/restaurant.json'))['id'])")
-echo "restaurant id: $RESTAURANT_ID"
-
-# Listele
-curl -sS http://localhost:8083/api/restaurants
-
-# Tek kayıt
-curl -sS http://localhost:8083/api/restaurants/$RESTAURANT_ID
-
-# Güncelle (restoranı kapat)
-curl -sS -X PUT http://localhost:8083/api/restaurants/$RESTAURANT_ID \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "Adana Sofrası",
-    "address": "Caferağa Mah. Kadıköy / İstanbul",
-    "cuisine": "Türk",
-    "open": false
-  }'
-
-# Sil (204)
-curl -sS -o /dev/null -w "%{http_code}\n" -X DELETE http://localhost:8083/api/restaurants/$RESTAURANT_ID
-```
-
-### 2) order-service — sipariş oluştur, oku, güncelle, sil
-
-```bash
-CUSTOMER_ID=$(python3 -c "import uuid; print(uuid.uuid4())")
-RESTAURANT_ID=$(python3 -c "import uuid; print(uuid.uuid4())")
-
-curl -sS -X POST http://localhost:8081/api/orders \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"customerId\": \"$CUSTOMER_ID\",
-    \"restaurantId\": \"$RESTAURANT_ID\",
-    \"totalAmount\": 149.90
-  }" | tee /tmp/order.json
-
-ORDER_ID=$(python3 -c "import json; print(json.load(open('/tmp/order.json'))['id'])")
-echo "order id: $ORDER_ID"
-
-curl -sS http://localhost:8081/api/orders
-curl -sS http://localhost:8081/api/orders/$ORDER_ID
-
-# Durumu CONFIRMED yap (Milestone 2'de bunu saga yapacak)
-curl -sS -X PUT http://localhost:8081/api/orders/$ORDER_ID \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"customerId\": \"$CUSTOMER_ID\",
-    \"restaurantId\": \"$RESTAURANT_ID\",
-    \"totalAmount\": 149.90,
-    \"status\": \"CONFIRMED\"
-  }"
-
-curl -sS -o /dev/null -w "%{http_code}\n" -X DELETE http://localhost:8081/api/orders/$ORDER_ID
-```
-
-`status` göndermezsen varsayılan **PENDING** olur.
-
-### 3) payment-service — ödeme oluştur, oku, güncelle, sil
-
-```bash
-ORDER_ID=$(python3 -c "import uuid; print(uuid.uuid4())")
-
-curl -sS -X POST http://localhost:8082/api/payments \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"orderId\": \"$ORDER_ID\",
-    \"amount\": 149.90
-  }" | tee /tmp/payment.json
-
-PAYMENT_ID=$(python3 -c "import json; print(json.load(open('/tmp/payment.json'))['id'])")
-echo "payment id: $PAYMENT_ID"
-
-curl -sS http://localhost:8082/api/payments
-curl -sS http://localhost:8082/api/payments/$PAYMENT_ID
-
-curl -sS -X PUT http://localhost:8082/api/payments/$PAYMENT_ID \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"orderId\": \"$ORDER_ID\",
-    \"amount\": 149.90,
-    \"status\": \"CAPTURED\"
-  }"
-
-curl -sS -o /dev/null -w "%{http_code}\n" -X DELETE http://localhost:8082/api/payments/$PAYMENT_ID
-```
-
-### Beklenen hata cevapları
-
-```bash
-# 404 — olmayan kayıt
-curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:8081/api/orders/00000000-0000-0000-0000-000000000000
-
-# 400 — validation (negatif tutar)
-curl -sS -X POST http://localhost:8081/api/orders \
-  -H 'Content-Type: application/json' \
-  -d '{"customerId":"00000000-0000-0000-0000-000000000001","restaurantId":"00000000-0000-0000-0000-000000000002","totalAmount":-1}'
-```
+Create istekleri `restaurantId` / `orderId` / `paymentId` değişkenlerini otomatik doldurur; sırayla Create → Get → Update → Delete çalıştır.
 
 ## Unit testler
 
