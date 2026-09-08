@@ -154,17 +154,22 @@ Community Edition'da aynı URL'leri README'deki curl'lerle veya tarayıcıdan `/
 | Flyway / `Schema-validation: missing table` / `password authentication failed` | `localhost:5433` hâlâ socialflow'a gidiyor olabilir. URL `localhost:5436/orderdb`, user `order` olmalı |
 | SDK is not defined | Project Structure → SDK 21 ekle, sonra Maven Reload |
 
-## API koleksiyonu (tek import)
+## API'yi denemek (Postman gerekmez)
 
-Tüm health + CRUD + hata istekleri tek dosyada:
+Servisler IntelliJ'den ayaktayken iki yol var:
 
-**`http/Nefis-Yemek.postman_collection.json`**
+**1) IntelliJ HTTP Client** — `http/api.http` dosyasını aç, isteğin üstündeki yeşil **Run**.
 
-- **Postman:** Import → File → bu JSON
-- **Insomnia / Bruno / Thunder Client:** aynı dosyayı Postman v2.1 olarak import et
-- **IntelliJ HTTP Client:** `http/api.http` (aynı istekler, IDE içinde yeşil Run)
+**2) Terminal** — proje kökünden:
 
-Create istekleri `restaurantId` / `orderId` / `paymentId` değişkenlerini otomatik doldurur; sırayla Create → Get → Update → Delete çalıştır.
+```bash
+chmod +x http/smoke.sh
+./http/smoke.sh
+```
+
+Health, üç servisin CRUD'u, 404 ve 400'ü sırayla çağırır; `OK` yazmalı.
+
+Postman/Insomnia istersen: `http/Nefis-Yemek.postman_collection.json` → Import.
 
 ## Unit testler
 
