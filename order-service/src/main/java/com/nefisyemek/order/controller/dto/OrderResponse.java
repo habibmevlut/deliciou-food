@@ -13,6 +13,7 @@ public record OrderResponse(
         UUID restaurantId,
         BigDecimal totalAmount,
         OrderStatus status,
+        String cancelReason,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -23,6 +24,7 @@ public record OrderResponse(
                 order.getRestaurantId(),
                 order.getTotalAmount(),
                 order.getStatus(),
+                order.getCancelReason(),
                 order.getCreatedAt(),
                 order.getUpdatedAt()
         );

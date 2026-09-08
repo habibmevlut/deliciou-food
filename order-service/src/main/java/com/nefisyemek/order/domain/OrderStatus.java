@@ -1,12 +1,16 @@
 package com.nefisyemek.order.domain;
 
 /**
- * Milestone 0'da sipariş yaşam döngüsü henüz Saga ile bağlanmadı.
- * PENDING: oluşturuldu, henüz ödeme/restoran onayı yok.
- * CONFIRMED / CANCELLED: Milestone 2'de orchestrator dolduracak.
+ * Saga adımları sipariş satırında durur — her servisin DB'sine bakmadan ilerlemeyi görürüz.
+ * PENDING: kaydedildi, Kafka komutu henüz çıkmadı (veya CRUD ile elle oluşturuldu).
+ * AWAITING_*: ilgili event bekleniyor.
+ * CONFIRMED / CANCELLED: terminal.
  */
 public enum OrderStatus {
     PENDING,
+    AWAITING_PAYMENT,
+    AWAITING_RESTAURANT,
+    AWAITING_DELIVERY,
     CONFIRMED,
     CANCELLED
 }

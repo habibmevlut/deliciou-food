@@ -12,7 +12,7 @@
 
     <artifactId>order-service</artifactId>
     <name>order-service</name>
-    <description>Sipariş oluşturma ve sipariş durumu (ileride Saga orchestrator)</description>
+    <description>Sipariş oluşturma, sipariş durumu ve OrderSagaOrchestrator</description>
 
     <properties>
         <start-class>com.nefisyemek.order.OrderServiceApplication</start-class>
@@ -34,6 +34,15 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.nefisyemek</groupId>
+            <artifactId>nefis-contracts</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>

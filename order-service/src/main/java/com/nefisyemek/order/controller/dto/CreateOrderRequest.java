@@ -11,6 +11,8 @@ public record CreateOrderRequest(
         @NotNull UUID customerId,
         @NotNull UUID restaurantId,
         @NotNull @Positive BigDecimal totalAmount,
-        OrderStatus status
+        OrderStatus status,
+        Boolean forceRestaurantReject,
+        Boolean forceRestaurantAccept
 ) {
 }

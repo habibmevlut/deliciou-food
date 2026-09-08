@@ -1,4 +1,4 @@
 /**
- * Restoran onay/red event'leri Milestone 2 saga akışında buraya gelecek.
+ * restaurant-commands: mutfak onayı. %20 rastgele red compensate'i göstermek için.
  */
 package com.nefisyemek.restaurant.event;

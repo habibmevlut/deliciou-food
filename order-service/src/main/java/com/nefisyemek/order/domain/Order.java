@@ -36,6 +36,15 @@ public class Order {
     @Column(nullable = false, length = 32)
     private OrderStatus status;
 
+    @Column(name = "cancel_reason", length = 128)
+    private String cancelReason;
+
+    @Column(name = "force_restaurant_reject", nullable = false)
+    private boolean forceRestaurantReject;
+
+    @Column(name = "force_restaurant_accept", nullable = false)
+    private boolean forceRestaurantAccept;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -99,6 +108,30 @@ public class Order {
 
     public void setStatus(OrderStatus status) {
         this.status = status;
+    }
+
+    public String getCancelReason() {
+        return cancelReason;
+    }
+
+    public void setCancelReason(String cancelReason) {
+        this.cancelReason = cancelReason;
+    }
+
+    public boolean isForceRestaurantReject() {
+        return forceRestaurantReject;
+    }
+
+    public void setForceRestaurantReject(boolean forceRestaurantReject) {
+        this.forceRestaurantReject = forceRestaurantReject;
+    }
+
+    public boolean isForceRestaurantAccept() {
+        return forceRestaurantAccept;
+    }
+
+    public void setForceRestaurantAccept(boolean forceRestaurantAccept) {
+        this.forceRestaurantAccept = forceRestaurantAccept;
     }
 
     public Instant getCreatedAt() {

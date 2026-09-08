@@ -21,6 +21,20 @@ spring:
   jackson:
     serialization:
       write-dates-as-timestamps: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: restaurant-service
+      auto-offset-reset: earliest
+      enable-auto-commit: true
+    producer:
+      acks: all
+
+nefis:
+  kafka:
+    enabled: ${NEFIS_KAFKA_ENABLED:true}
+  restaurant:
+    reject-probability: ${RESTAURANT_REJECT_PROBABILITY:0.2}
 
 management:
   endpoints:

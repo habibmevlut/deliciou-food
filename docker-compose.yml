@@ -1,7 +1,8 @@
-# Nefis Yemek — Milestone 1
+# Nefis Yemek — Milestone 2
 #
 # Database per Service: her iş yeteneğinin kendi PostgreSQL instance'ı var.
 # Dış trafik yalnızca api-gateway :8080 üzerinden girer.
+# Kafka KRaft (Zookeeper yok): IntelliJ localhost:9092, container içi kafka:29092.
 #
 # Host portlar:
 #   api-gateway         8080
@@ -11,9 +12,10 @@
 #   customer-service    8084    customer-db       5437
 #   delivery-service    8085    delivery-db       5438
 #   notification-service 8086   notification-db   5439
+#   kafka               9092
 #
 # 5433 kullanılmıyor (socialflow vs.).
-# `docker compose up` yalnızca Postgres.
+# `docker compose up` → Postgres + Kafka (IntelliJ için doğru).
 # Tam stack: `docker compose --profile apps up --build`
 
 name: nefis-yemek
@@ -125,6 +127,35 @@ services:
       timeout: 5s
       retries: 10
 
+  kafka:
+    image: apache/kafka:3.9.1
+    hostname: kafka
+    container_name: nefis-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
   order-service:
     profiles: ["apps"]
     build: { context: ., dockerfile: Dockerfile, args: { MODULE: order-service } }
@@ -136,8 +167,10 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/orderdb
       SPRING_DATASOURCE_USERNAME: order
       SPRING_DATASOURCE_PASSWORD: order
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     depends_on:
       order-db: { condition: service_healthy }
+      kafka: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
       interval: 10s
@@ -157,8 +190,10 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://payment-db:5432/paymentdb
       SPRING_DATASOURCE_USERNAME: payment
       SPRING_DATASOURCE_PASSWORD: payment
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     depends_on:
       payment-db: { condition: service_healthy }
+      kafka: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
       interval: 10s
@@ -178,8 +213,10 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://restaurant-db:5432/restaurantdb
       SPRING_DATASOURCE_USERNAME: restaurant
       SPRING_DATASOURCE_PASSWORD: restaurant
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     depends_on:
       restaurant-db: { condition: service_healthy }
+      kafka: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
       interval: 10s
@@ -220,8 +257,10 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://delivery-db:5432/deliverydb
       SPRING_DATASOURCE_USERNAME: delivery
       SPRING_DATASOURCE_PASSWORD: delivery
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     depends_on:
       delivery-db: { condition: service_healthy }
+      kafka: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
       interval: 10s

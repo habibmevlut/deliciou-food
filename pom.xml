@@ -23,6 +23,7 @@
     <description>Kurgusal yemek sipariş platformu — mikroservis pattern laboratuvarı</description>
 
     <modules>
+        <module>nefis-contracts</module>
         <module>order-service</module>
         <module>payment-service</module>
         <module>restaurant-service</module>

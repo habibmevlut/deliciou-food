@@ -5,6 +5,7 @@ import com.nefisyemek.order.controller.dto.OrderResponse;
 import com.nefisyemek.order.controller.dto.UpdateOrderRequest;
 import com.nefisyemek.order.domain.Order;
 import com.nefisyemek.order.domain.OrderStatus;
+import com.nefisyemek.order.event.OrderSagaOrchestrator;
 import com.nefisyemek.order.exception.ResourceNotFoundException;
 import com.nefisyemek.order.repository.OrderRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +23,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -31,19 +33,22 @@ class OrderServiceTest {
     @Mock
     private OrderRepository orderRepository;
 
+    @Mock
+    private OrderSagaOrchestrator saga;
+
     private OrderService orderService;
 
     @BeforeEach
     void setUp() {
-        orderService = new OrderService(orderRepository);
+        orderService = new OrderService(orderRepository, saga);
     }
 
     @Test
-    void createDefaultsStatusToPending() {
+    void createDefaultsStatusToPendingAndStartsSaga() {
         UUID customerId = UUID.randomUUID();
         UUID restaurantId = UUID.randomUUID();
         CreateOrderRequest request = new CreateOrderRequest(
-                customerId, restaurantId, new BigDecimal("149.90"), null);
+                customerId, restaurantId, new BigDecimal("149.90"), null, null, true);
 
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -52,9 +57,23 @@ class OrderServiceTest {
         ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
         verify(orderRepository).save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(captor.getValue().isForceRestaurantAccept()).isTrue();
         assertThat(response.customerId()).isEqualTo(customerId);
         assertThat(response.restaurantId()).isEqualTo(restaurantId);
         assertThat(response.totalAmount()).isEqualByComparingTo("149.90");
+        verify(saga).start(captor.getValue());
+    }
+
+    @Test
+    void createSkipsSagaWhenStatusProvided() {
+        CreateOrderRequest request = new CreateOrderRequest(
+                UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("10.00"),
+                OrderStatus.PENDING, null, null);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        orderService.create(request);
+
+        verify(saga, never()).start(any());
     }
 
     @Test

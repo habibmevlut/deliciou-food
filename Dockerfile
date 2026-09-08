@@ -6,6 +6,7 @@ WORKDIR /workspace
 
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
+COPY nefis-contracts/pom.xml nefis-contracts/pom.xml
 COPY order-service/pom.xml order-service/pom.xml
 COPY payment-service/pom.xml payment-service/pom.xml
 COPY restaurant-service/pom.xml restaurant-service/pom.xml
@@ -17,6 +18,7 @@ COPY api-gateway/pom.xml api-gateway/pom.xml
 RUN chmod +x mvnw \
     && ./mvnw -B -q -DskipTests dependency:go-offline || true
 
+COPY nefis-contracts nefis-contracts
 COPY order-service order-service
 COPY payment-service payment-service
 COPY restaurant-service restaurant-service

@@ -1,11 +1,31 @@
 #!/usr/bin/env bash
-# Gateway :8080 üzerinden Milestone 1 smoke. Servisler + api-gateway ayakta olmalı.
+# Gateway :8080 üzerinden Milestone 2 smoke (CRUD + saga).
+# Servisler + api-gateway + Kafka ayakta olmalı.
 set -euo pipefail
 
 GW=http://localhost:8080
 
 json_field() {
   python3 -c "import json,sys; print(json.load(sys.stdin)${1})"
+}
+
+wait_order_status() {
+  local id="$1"
+  local expected="$2"
+  local body=""
+  local status=""
+  for i in $(seq 1 20); do
+    body=$(curl -sf "${GW}/api/orders/${id}")
+    status=$(echo "$body" | json_field "['status']")
+    echo "  poll ${i}: ${status}"
+    if [ "${status}" = "${expected}" ]; then
+      echo "${body}"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "timeout waiting for ${expected}, last=${body}" >&2
+  return 1
 }
 
 echo "== gateway health =="
@@ -18,7 +38,6 @@ REST=$(curl -sS -X POST "${GW}/api/restaurants" \
 echo "$REST"
 RID=$(echo "$REST" | json_field "['id']")
 curl -sf "${GW}/api/restaurants/${RID}" >/dev/null
-curl -sS -o /dev/null -w "DELETE restaurant %{http_code}\n" -X DELETE "${GW}/api/restaurants/${RID}"
 
 echo "== customer + address via gateway =="
 CUS=$(curl -sS -X POST "${GW}/api/customers" \
@@ -31,10 +50,10 @@ curl -sS -X POST "${GW}/api/customers/${CID}/addresses" \
   -d '{"title":"Ev","street":"Caferağa","city":"İstanbul"}' >/dev/null
 curl -sf "${GW}/api/customers/${CID}/addresses" >/dev/null
 
-echo "== order / payment / delivery / notification via gateway =="
+echo "== CRUD order (status=PENDING, saga yok) =="
 ORD=$(curl -sS -X POST "${GW}/api/orders" \
   -H 'Content-Type: application/json' \
-  -d "{\"customerId\":\"${CID}\",\"restaurantId\":\"22222222-2222-2222-2222-222222222222\",\"totalAmount\":149.90}")
+  -d "{\"customerId\":\"${CID}\",\"restaurantId\":\"${RID}\",\"totalAmount\":149.90,\"status\":\"PENDING\"}")
 echo "$ORD"
 OID=$(echo "$ORD" | json_field "['id']")
 PAY=$(curl -sS -X POST "${GW}/api/payments" \
@@ -49,6 +68,22 @@ NOTIF=$(curl -sS -X POST "${GW}/api/notifications" \
   -H 'Content-Type: application/json' \
   -d '{"recipient":"5551112233","channel":"SMS","message":"Siparis alindi"}')
 echo "$NOTIF"
+
+echo "== saga mutlu yol (forceRestaurantAccept) =="
+SAGA_OK=$(curl -sS -X POST "${GW}/api/orders" \
+  -H 'Content-Type: application/json' \
+  -d "{\"customerId\":\"${CID}\",\"restaurantId\":\"${RID}\",\"totalAmount\":149.90,\"forceRestaurantAccept\":true}")
+echo "$SAGA_OK"
+SID=$(echo "$SAGA_OK" | json_field "['id']")
+wait_order_status "${SID}" "CONFIRMED" >/dev/null
+
+echo "== saga compensate (forceRestaurantReject) =="
+SAGA_KO=$(curl -sS -X POST "${GW}/api/orders" \
+  -H 'Content-Type: application/json' \
+  -d "{\"customerId\":\"${CID}\",\"restaurantId\":\"${RID}\",\"totalAmount\":89.50,\"forceRestaurantReject\":true}")
+echo "$SAGA_KO"
+KID=$(echo "$SAGA_KO" | json_field "['id']")
+wait_order_status "${KID}" "CANCELLED" >/dev/null
 
 echo "== errors via gateway =="
 curl -sS -o /dev/null -w "404 %{http_code}\n" "${GW}/api/orders/00000000-0000-0000-0000-000000000000"

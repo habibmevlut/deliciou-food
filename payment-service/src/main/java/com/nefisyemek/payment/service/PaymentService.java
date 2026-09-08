@@ -10,6 +10,7 @@ import com.nefisyemek.payment.repository.PaymentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -54,6 +55,42 @@ public class PaymentService {
     public void delete(UUID id) {
         Payment payment = getPayment(id);
         paymentRepository.delete(payment);
+    }
+
+    /**
+     * Saga tahsilatı. Aynı order için tekrar gelen komut yeni satır açmaz (M3 processed_events değil;
+     * burada orderId yeter — öğrenme için kaba idempotency).
+     */
+    @Transactional
+    public Payment captureForSaga(UUID orderId, BigDecimal amount) {
+        return paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(orderId)
+                .filter(existing -> existing.getStatus() == PaymentStatus.CAPTURED
+                        || existing.getStatus() == PaymentStatus.REFUNDED
+                        || existing.getStatus() == PaymentStatus.FAILED)
+                .orElseGet(() -> {
+                    PaymentStatus status = amount == null || amount.signum() <= 0
+                            ? PaymentStatus.FAILED
+                            : PaymentStatus.CAPTURED;
+                    return paymentRepository.save(new Payment(
+                            orderId,
+                            amount == null ? BigDecimal.ZERO : amount,
+                            status
+                    ));
+                });
+    }
+
+    @Transactional
+    public Payment refundForSaga(UUID orderId) {
+        Payment payment = paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(orderId)
+                .orElse(null);
+        if (payment == null) {
+            return null;
+        }
+        if (payment.getStatus() == PaymentStatus.CAPTURED) {
+            payment.setStatus(PaymentStatus.REFUNDED);
+            return paymentRepository.save(payment);
+        }
+        return payment;
     }
 
     private Payment getPayment(UUID id) {

@@ -35,6 +35,13 @@ public class DeliveryService {
     }
     @Transactional
     public void delete(UUID id) { repo.delete(get(id)); }
+
+    @Transactional
+    public Delivery assignForSaga(UUID orderId, String courierName) {
+        return repo.findFirstByOrderIdOrderByCreatedAtDesc(orderId)
+                .orElseGet(() -> repo.save(new Delivery(orderId, courierName, DeliveryStatus.ASSIGNED)));
+    }
+
     private Delivery get(UUID id) {
         return repo.findById(id).orElseThrow(() -> new ResourceNotFoundException("Delivery not found: " + id));
     }

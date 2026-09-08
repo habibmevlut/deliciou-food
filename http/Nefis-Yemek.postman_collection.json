@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-nefisyemek0001",
     "name": "Nefis Yemek",
-    "description": "Milestone 1 — tek kapı: tüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. Servisler IntelliJ'de ayakta (Nefis Yemek: tum servisler).\n2. Bu klasörü sırayla çalıştır: Health → Customer → Restaurant → Order → Payment → Delivery → Notification.\n3. Create istekleri id'yi koleksiyon değişkenine yazar; sonraki Get/Put onları kullanır.\n\nYeniden import: ben her milestone'da http/Nefis-Yemek.postman_collection.json dosyasını güncellerim.\nPostman → Import → dosyayı seç → Replace (aynı koleksiyonu güncelle).\n\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
+    "description": "Milestone 2 — tek kapı + Saga. Tüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. docker compose up -d (Postgres + Kafka), sonra IntelliJ: Nefis Yemek: tum servisler.\n2. CRUD için 1–7. Asıl ders: 8. Saga — Sipariş Ver.\n3. Create istekleri id'yi koleksiyon değişkenine yazar.\n\nYeniden import: Postman → Import → Replace (koleksiyon id sabit).\n\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -265,7 +265,7 @@
                 }
               }
             },
-            "description": "status göndermezsen PENDING. Saga Milestone 2."
+            "description": "status göndermezsen saga başlar (Kafka). Sadece CRUD için status: PENDING ekle."
           },
           "event": [
             {
@@ -537,6 +537,112 @@
             "header": [],
             "url": "{{gateway}}/api/notifications/{{notificationId}}"
           }
+        }
+      ]
+    },
+    {
+      "name": "8. Saga — Sipariş Ver",
+      "description": "POST /api/orders (status yok) orchestrator'ı başlatır. 1–3 sn sonra Get order.\n\nMutlu yol: CONFIRMED + payment CAPTURED + delivery ASSIGNED.\nRed: CANCELLED + cancelReason + payment REFUNDED.\n\nLog'lar: order-service SAGA *, payment-service PAYMENT *, restaurant-service RESTAURANT REJECT/ACCEPT.",
+      "item": [
+        {
+          "name": "Sipariş Ver (mutlu yol)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"restaurantId\": \"{{restaurantId}}\",\n  \"totalAmount\": 149.9,\n  \"forceRestaurantAccept\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "forceRestaurantAccept %20 rastgele red'i kapatır. Cevap hemen AWAITING_PAYMENT olur; 1–3 sn sonra Get order → CONFIRMED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const id = pm.response.json().id;",
+                  "  if (id) pm.collectionVariables.set('orderId', id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get order (saga sonucu)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/orders/{{orderId}}",
+            "description": "2–3 saniye bekle, tekrar gönder. Mutlu yol: CONFIRMED. Red: CANCELLED + cancelReason."
+          }
+        },
+        {
+          "name": "List payments (saga yan etkisi)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/payments",
+            "description": "Mutlu yol CAPTURED, compensate REFUNDED. Elle POST /payments atmana gerek yok."
+          }
+        },
+        {
+          "name": "List deliveries (saga yan etkisi)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/deliveries"
+          }
+        },
+        {
+          "name": "Sipariş Ver (restoran red / compensate)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"restaurantId\": \"{{restaurantId}}\",\n  \"totalAmount\": 89.5,\n  \"forceRestaurantReject\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Restoran FORCE_REJECT → orchestrator RefundPaymentCommand → CANCELLED. restaurant-service: RESTAURANT REJECT. order-service: SAGA COMPENSATE. payment-service: PAYMENT REFUNDED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const id = pm.response.json().id;",
+                  "  if (id) pm.collectionVariables.set('orderId', id);",
+                  "}"
+                ]
+              }
+            }
+          ]
         }
       ]
     },

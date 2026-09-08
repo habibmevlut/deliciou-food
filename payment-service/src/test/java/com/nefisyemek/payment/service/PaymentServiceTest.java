@@ -20,6 +20,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -59,5 +60,40 @@ class PaymentServiceTest {
         assertThatThrownBy(() -> paymentService.findById(id))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(id.toString());
+    }
+
+    @Test
+    void captureForSagaWritesCaptured() {
+        UUID orderId = UUID.randomUUID();
+        when(paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(orderId)).thenReturn(Optional.empty());
+        when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Payment payment = paymentService.captureForSaga(orderId, new BigDecimal("40.00"));
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CAPTURED);
+    }
+
+    @Test
+    void captureForSagaIsIdempotentWhenAlreadyCaptured() {
+        UUID orderId = UUID.randomUUID();
+        Payment existing = new Payment(orderId, new BigDecimal("40.00"), PaymentStatus.CAPTURED);
+        when(paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(orderId)).thenReturn(Optional.of(existing));
+
+        Payment payment = paymentService.captureForSaga(orderId, new BigDecimal("40.00"));
+
+        assertThat(payment).isSameAs(existing);
+        verify(paymentRepository, never()).save(any());
+    }
+
+    @Test
+    void refundForSagaMarksCapturedAsRefunded() {
+        UUID orderId = UUID.randomUUID();
+        Payment existing = new Payment(orderId, new BigDecimal("40.00"), PaymentStatus.CAPTURED);
+        when(paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(orderId)).thenReturn(Optional.of(existing));
+        when(paymentRepository.save(existing)).thenReturn(existing);
+
+        Payment payment = paymentService.refundForSaga(orderId);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
     }
 }

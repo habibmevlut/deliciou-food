@@ -1,2 +1,5 @@
-/** Kafka consumer Milestone 2. Simdilik sadece REST. */
+/**
+ * Kafka consumer henüz yok. Milestone 2 saga REST ile SMS atmaz;
+ * bildirim ileride order CONFIRMED/CANCELLED event'ine bağlanacak.
+ */
 package com.nefisyemek.notification.event;

@@ -4,25 +4,45 @@ Kurgusal bir yemek sipariş platformu. Amaç production'a çıkmak değil; mikro
 
 Milestone'lar **tek branch'te** birikir. README her zaman o ana kadar yapılanın tam halidir; görmek için branch değiştirmen gerekmez.
 
-Şu an **Milestone 1**: kalan servisler + API Gateway. Dış dünya yalnızca **:8080** üzerinden konuşur.
+Şu an **Milestone 2**: Kafka + orchestration-based Saga. Dış dünya hâlâ yalnızca **:8080** üzerinden konuşur.
 
-## Neden API Gateway?
+## Gateway nedir, burada hangisi kullanıldı?
 
-Altı servisin altı portunu istemciye açmak, URL'leri ve (Milestone 4'te) JWT'yi her yerde kopyalamak demek. Gateway tek kapı: path'e bakıp isteği doğru servise iletir. Servisler hâlâ **Database per Service** — birbirinin Postgres'ine dokunmazlar.
+Gateway bir **ters vekil (reverse proxy)** + **tek kapı**. İstemci altı porta dağılmaz; `http://localhost:8080/api/...` der, gateway path'e bakıp isteği doğru servise iletir (method, header, body aynı kalır). JSON'u yorumlamaz, sipariş iş kuralı çalıştırmaz, Postgres'e dokunmaz.
 
-## Milestone 1'de ne var / ne yok
+Neden var:
+
+- İstemciye 6 URL ezberletmemek
+- Milestone 4'te JWT'yi **tek yerde** doğrulamak (her serviste Security filter kopyalamamak)
+- İçerideki port/host değişince yalnızca gateway config'i değişir
+
+Bu repoda kullanılan kütüphane: **`spring-cloud-starter-gateway`** — yani **Spring Cloud Gateway (WebFlux / Netty)**.
+
+Kullanılmayanlar (bilerek):
+
+| Alternatif | Neden değil |
+| --- | --- |
+| Netflix Zuul | Eski nesil; Spring Cloud onu Gateway ile değiştirdi |
+| `spring-cloud-starter-gateway-server-webmvc` | Servlet/Tomcat tabanlı yeni MVC gateway. Biz reaktif olanı seçtik |
+| nginx / Envoy | Harika prod proxy'ler; bu laboratuvarda route + ileride JWT Java kodunda yaşasın diye Spring'i seçtik |
+| `spring-boot-starter-web` gateway içinde | Tomcat + Netty çakışır. Gateway **yalnızca WebFlux** |
+
+Nasıl çalışıyor: `application.yml` içinde `Path=/api/orders/**` → `localhost:8081` (IDE) veya `http://order-service:8081` (Docker). **Prefix strip yok** — backend zaten `/api/orders` dinliyor. Health: `GET :8080/actuator/health` gateway'in kendisi; `include: gateway` ile route listesi de actuator'da.
+
+## Milestone 2'de ne var / ne yok
 
 | Var | Yok (sonraki milestone) |
 | --- | --- |
-| 6 iş servisi + api-gateway, 6 Postgres, Flyway, CRUD | Kafka, Saga, Outbox |
-| Gateway route'ları (`/api/**` → ilgili servis) | JWT, Resilience4j, Zipkin |
-| notification-service REST + console mock | Kafka consumer |
+| 6 iş servisi + api-gateway, 6 Postgres, Flyway, CRUD | Transactional Outbox (M2.5) |
+| Spring Cloud Gateway (`:8080`) | JWT, Resilience4j, Zipkin (M4) |
+| Kafka KRaft (tek broker), 6 topic | Idempotent consumer tablosu (M3) |
+| `OrderSagaOrchestrator` + compensating iade | notification Kafka consumer |
 
-## Mimari (M1)
+## Mimari (M2)
 
 ```
                     ┌─────────────┐
-         :8080      │ api-gateway │
+         :8080      │ api-gateway │     Spring Cloud Gateway (WebFlux)
                     └──────┬──────┘
            ┌─────────┬─────┼─────┬─────────┬──────────┐
            ▼         ▼     ▼     ▼         ▼          ▼
@@ -30,7 +50,61 @@ Altı servisin altı portunu istemciye açmak, URL'leri ve (Milestone 4'te) JWT'
         :8084      :8083    :8081 :8082    :8085      :8086
            ▼         ▼       ▼      ▼        ▼          ▼
          PG 5437   PG 5435  PG 5436 PG 5434  PG 5438    PG 5439
+                             │
+                    OrderSagaOrchestrator
+                             │
+                          Kafka :9092 (KRaft)
 ```
+
+## Neden Saga? Neden 2PC değil?
+
+"Sipariş Ver" dört servisi ilgilendirir (order, payment, restaurant, delivery). Hepsi kendi Postgres'ine sahip — tek bir `BEGIN/COMMIT` yok. İki fazlı commit (2PC) mikroserviste pratikte kilit ve operasyonel kabus.
+
+**Orchestration-based saga:** `order-service` içindeki `OrderSagaOrchestrator` adımları sıraya dizer. Bir adım başarısız olursa **geri alma (compensate)** yazar: restoran reddederse ödeme iade edilir, sipariş `CANCELLED` olur.
+
+Choreography (her servis bir sonrakini tetikler) M2'de yok; tek yönetmen okumayı kolaylaştırır.
+
+**Dual-write uyarısı:** orchestrator DB'ye yazar *ve* Kafka'ya send eder. İkisi atomik değil. Process send'den önce çökerse komut kaybolur — bunu **Milestone 2.5 Outbox** çözer.
+
+## Kafka topic listesi
+
+| Topic | Kim üretir | Kim tüketir | Mesaj |
+| --- | --- | --- | --- |
+| `payment-commands` | order-service | payment-service | `ChargePaymentCommand`, `RefundPaymentCommand` |
+| `payment-events` | payment-service | order-service | `PaymentCharged` / `Failed` / `Refunded` |
+| `restaurant-commands` | order-service | restaurant-service | `ReserveRestaurantCommand` |
+| `restaurant-events` | restaurant-service | order-service | `RestaurantAccepted` / `Rejected` |
+| `delivery-commands` | order-service | delivery-service | `AssignCourierCommand` |
+| `delivery-events` | delivery-service | order-service | `CourierAssigned` / `Failed` |
+
+Şema `nefis-contracts` JAR'ında. Bu **domain entity paylaşmak değil** — yalnızca mesajın JSON şekli. Her servis hâlâ kendi DB'sine bakar.
+
+Komut = "yap". Event = "oldu". Orchestrator event dinler, bir sonraki komutu yollar.
+
+## Mutlu senaryo nasıl tetiklenir?
+
+1. `docker compose up -d` → 6 Postgres **ve Kafka**
+2. IntelliJ: **Nefis Yemek: tum servisler**
+3. Postman: Customer oluştur → Restaurant oluştur → **8. Saga → Sipariş Ver (mutlu yol)**
+4. Body'de `forceRestaurantAccept: true` var; %20 rastgele red devre dışı. 1–3 sn sonra `GET /api/orders/{{orderId}}` → `CONFIRMED`
+5. `GET /api/payments` → `CAPTURED`. `GET /api/deliveries` → kurye adı (`Kurye-Ada` / `Can` / `Ece`)
+
+`POST /api/orders` `status` göndermezsen saga başlar. `status: "PENDING"` gönderirsen eski CRUD yolu (Kafka yok) — izole deneme için.
+
+## Red / compensate hangi loglarda?
+
+Postman: **Sipariş Ver (restoran red)**. Body: `forceRestaurantReject: true`.
+
+| Konsol (IntelliJ) | Satır |
+| --- | --- |
+| restaurant-service | `RESTAURANT REJECT order=... reason=FORCE_REJECT (compensate tetiklenecek)` |
+| order-service | `SAGA COMPENSATE order=... reason=FORCE_REJECT` |
+| order-service | `SAGA cancelled order=... -> RefundPaymentCommand` |
+| payment-service | `PAYMENT REFUNDED order=... reason=FORCE_REJECT` |
+
+`GET` sipariş: `status=CANCELLED`, `cancelReason=FORCE_REJECT`. Ödeme: `REFUNDED`.
+
+Bayrak yoksa restoran **%20** `RANDOM_REJECT` eder (`nefis.restaurant.reject-probability`, env `RESTAURANT_REJECT_PROBABILITY`).
 
 ## Gateway route tablosu
 
@@ -46,7 +120,7 @@ Altı servisin altı portunu istemciye açmak, URL'leri ve (Milestone 4'te) JWT'
 
 Prefix strip yok: backend zaten aynı path'i dinliyor.
 
-Gateway üzerinden örnek:
+Gateway üzerinden örnek (CRUD; saga için Postman klasör 8):
 
 ```bash
 curl http://localhost:8080/actuator/health
@@ -61,22 +135,10 @@ curl -sS -X POST http://localhost:8080/api/restaurants \
 
 curl -sS -X POST http://localhost:8080/api/orders \
   -H 'Content-Type: application/json' \
-  -d '{"customerId":"<CUSTOMER_ID>","restaurantId":"<RESTAURANT_ID>","totalAmount":149.90}'
-
-curl -sS -X POST http://localhost:8080/api/payments \
-  -H 'Content-Type: application/json' \
-  -d '{"orderId":"<ORDER_ID>","amount":149.90}'
-
-curl -sS -X POST http://localhost:8080/api/deliveries \
-  -H 'Content-Type: application/json' \
-  -d '{"orderId":"<ORDER_ID>","courierName":"Ahmet"}'
-
-curl -sS -X POST http://localhost:8080/api/notifications \
-  -H 'Content-Type: application/json' \
-  -d '{"recipient":"5551112233","channel":"SMS","message":"Siparis alindi"}'
+  -d '{"customerId":"<CUSTOMER_ID>","restaurantId":"<RESTAURANT_ID>","totalAmount":149.90,"forceRestaurantAccept":true}'
 ```
 
-notification-service konsola `[MOCK SMS] to=...` yazar; gerçek SMS yok.
+notification-service konsola `[MOCK SMS] to=...` yazar; gerçek SMS yok. M2'de saga SMS atmaz.
 
 ## Portlar
 
@@ -89,6 +151,7 @@ notification-service konsola `[MOCK SMS] to=...` yazar; gerçek SMS yok.
 | customer-service | 8084 | — |
 | delivery-service | 8085 | — |
 | notification-service | 8086 | — |
+| kafka | 9092 | KRaft, tek broker |
 | order-db | 5436 | `order` / `orderdb` |
 | payment-db | 5434 | `payment` / `paymentdb` |
 | restaurant-db | 5435 | `restaurant` / `restaurantdb` |
@@ -108,7 +171,7 @@ notification-service konsola `[MOCK SMS] to=...` yazar; gerçek SMS yok.
 docker compose --profile apps up --build
 ```
 
-`--profile apps` olmazsa yalnızca Postgres ayağa kalkar (IntelliJ için doğru). Java + gateway container'dan koşsun dersen profile gerekir.
+`--profile apps` olmazsa Postgres **ve Kafka** ayağa kalkar (IntelliJ için doğru). Java + gateway container'dan koşsun dersen profile gerekir.
 
 İlk build uzun sürebilir. Dışarıdan yalnızca gateway:
 
@@ -117,104 +180,97 @@ curl http://localhost:8080/actuator/health
 curl http://localhost:8080/api/restaurants
 ```
 
-Sadece veritabanlarını ayağa kaldırıp servisleri IDE'den çalıştırmak için:
+Sadece altyapıyı ayağa kaldırıp servisleri IDE'den çalıştırmak için:
 
 ```bash
 docker compose up -d
+docker compose ps   # nefis-kafka 0.0.0.0:9092 ve 6 Postgres
 # IntelliJ: Nefis Yemek: tum servisler (gateway dahil)
+```
+
+Topic'leri görmek:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
 ```
 
 ## IntelliJ IDEA ile derleme ve çalıştırma
 
-Servisleri container içinde değil, IDE'den debug ederek çalıştırmak için Java süreçlerini IntelliJ'e bırak; Postgres'i Docker'da tut.
+Servisleri container içinde değil, IDE'den debug ederek çalıştırmak için Java süreçlerini IntelliJ'e bırak; Postgres **ve Kafka**'yı Docker'da tut.
 
-**IntelliJ ile çalışırken** Java container'larını açma. `docker compose up` yalnızca Postgres'leri başlatır. Tam stack için: `docker compose --profile apps up --build`.
+**IntelliJ ile çalışırken** Java container'larını açma. `docker compose up` yalnızca Postgres + Kafka başlatır. Tam stack için: `docker compose --profile apps up --build`.
 
 ### 1) Projeyi aç
 
 1. **File → Open** → repo kökündeki `pom.xml` dosyasını seç → **Open as Project**.
 2. Trust / Maven import uyarısını onayla.
-3. **File → Project Structure → Project SDK** = **21** (Eclipse Temurin / Oracle / Microsoft, fark etmez).
-   Language level da 21 olmalı; Maven `java.version` bunu zaten dayatır.
-4. Sağdaki **Maven** aracında kök proje `nefis-yemek` görünmeli, altında üç modül.
+3. **File → Project Structure → Project SDK** = **21**.
+4. Sağdaki **Maven** aracında kök proje `nefis-yemek` görünmeli; yeni modül: `nefis-contracts`.
 5. **Settings → Build, Execution, Deployment → Build Tools → Maven**
    - **Maven home path:** *Use Maven wrapper* (`./mvnw`)
    - **JDK for importer:** 21
 
 İlk import'tan sonra Maven aracındaki yenile (Reload All Maven Projects) butonuna bas.
 
-### 2) Sadece veritabanlarını başlat
-
-Terminal (IntelliJ altındaki) veya harici shell:
+### 2) Sadece altyapıyı başlat
 
 ```bash
 docker compose up -d
 docker compose ps
 ```
 
-`nefis-order-db` satırında `0.0.0.0:5436->5432/tcp` görünmeli. `PORTS` boşsa host portu bind olmamıştır; IntelliJ yanlış Postgres'e gider.
-
-Üç Postgres ayağa kalkmadan servisler Flyway/`ddl-auto: validate` yüzünden **fail** olur.
+`nefis-order-db` satırında `0.0.0.0:5436->5432/tcp`, `nefis-kafka` satırında `9092` görünmeli.
 
 ### 3) Build
 
 Run dropdown'dan **Nefis Yemek: Maven Build** (`clean verify`) veya Maven aracında kök `nefis-yemek` → **Lifecycle → verify**.
 
-Yeşil tik: üç modül derlendi, unit testler geçti.
-
 ### 4) Servisleri çalıştır
-
-Run dropdown'da hazır konfigürasyonlar var:
 
 | Konfigürasyon | Ne yapar |
 | --- | --- |
 | **Nefis Yemek: tum servisler** | Gateway + 6 iş servisi (önerilen) |
-| `order-service` / `payment-service` / `restaurant-service` | `main` metodundan Application olarak çalıştırır |
-| `*-service (Maven)` | `spring-boot:run` — modül adı IntelliJ'de farklıysa bunu kullan |
+| `order-service` / `payment-service` / … | `main` metodundan Application |
+| `*-service (Maven)` | `spring-boot:run` |
 
-**Nefis Yemek: tum servisler** → yeşil Run (veya Debug). Gateway en son ayağa kalkabilir; 8080 dinlemeden istek atma.
+**Nefis Yemek: tum servisler** → yeşil Run (veya Debug). Kafka yoksa order/payment/restaurant/delivery log'unda broker hatası görürsün.
 
-Konsolda `Started ApiGatewayApplication` ve diğer `*ServiceApplication` satırları görünmeli.
+Konsolda `Started ApiGatewayApplication` ve `*ServiceApplication` satırları görünmeli. Saga için `SAGA start` / `PAYMENT CAPTURED` / `RESTAURANT ACCEPT` satırlarını izle.
 
-`main` yanındaki yeşil üçgene basmak da aynı.
-
-**spring-boot-devtools** var: kaynak kaydedince (Build → Build Project, varsayılan Ctrl/Cmd+F9) uygulama kendini yeniden başlatır.
+**spring-boot-devtools** var: kaynak kaydedince (Build → Build Project) uygulama kendini yeniden başlatır.
 
 ### 5) IntelliJ içinden dene
 
-`http/api.http` dosyasını aç (IntelliJ HTTP Client — Ultimate'te yerleşik). Satırın üstündeki **Run** ile health ve CRUD isteklerini gönder.
-
-Community Edition'da aynı URL'leri README'deki curl'lerle veya tarayıcıdan `/actuator/health` ile doğrula.
+`http/api.http` (Ultimate HTTP Client) veya Postman.
 
 ### Sık karşılaşılan hatalar
 
 | Belirti | Çözüm |
 | --- | --- |
-| `nefis-order-db` healthy ama `PORTS` sütunu boş | Host **5433** başka bir container'da (ör. `socialflow-postgres`). Order DB **5436** kullanır — compose'u güncelleyip `docker compose up -d --force-recreate order-db` |
-| `Connection refused` / `HikariPool` Postgres'e bağlanamıyor | `docker compose ps` — `order-db` 5436, `payment-db` 5434, `restaurant-db` 5435 dinliyor mu? |
-| `Port 8081 was already in use` | Java container'ı da açık kalmış: `docker compose --profile apps stop` |
-| Run config: *module not specified* | Maven Reload; veya `order-service (Maven)` konfigürasyonunu kullan |
-| Flyway / `Schema-validation: missing table` / `password authentication failed` | `localhost:5433` hâlâ socialflow'a gidiyor olabilir. URL `localhost:5436/orderdb`, user `order` olmalı |
-| SDK is not defined | Project Structure → SDK 21 ekle, sonra Maven Reload |
+| `nefis-order-db` healthy ama `PORTS` sütunu boş | Host **5433** başka bir container'da. Order DB **5436** |
+| `Connection refused` / `HikariPool` | `docker compose ps` — Postgres portları + `nefis-kafka :9092` |
+| `Connection to localhost:9092 refused` | Kafka yok: `docker compose up -d` |
+| `Port 8081 was already in use` | `docker compose --profile apps stop` |
+| Run config: *module not specified* | Maven Reload |
+| Flyway / `Schema-validation: missing table` | Order URL `localhost:5436/orderdb`. V2 migration `cancel_reason` ekler |
+| SDK is not defined | Project Structure → SDK 21, Maven Reload |
 
 ## API'yi denemek (Postman)
 
 Koleksiyon: **`http/Nefis-Yemek.postman_collection.json`**
 
-Her milestone'da bu dosya güncellenir. Sen Postman'da:
-
 1. **Import → File** → bu JSON
-2. Aynı dosyayı tekrar import edince **Replace** de (koleksiyon id sabit; güncellenir)
-3. Soldaki klasörler route tablosu: hepsi `{{gateway}}` = `http://localhost:8080`
-4. Sırayla: Gateway health → Customer → Restaurant → Order → Payment → Delivery → Notification
+2. Tekrar importte **Replace** (koleksiyon id sabit)
+3. Hepsi `{{gateway}}` = `http://localhost:8080`
+4. CRUD klasörleri (1–7) + **8. Saga — Sipariş Ver**
 
-Create istekleri `customerId` / `orderId` gibi değişkenleri otomatik doldurur. **8081–8086'ya istek atma.**
+**8081–8086'ya istek atma.**
 
-IntelliJ HTTP Client istersen: `http/api.http`. Terminal: `./http/smoke.sh`.
+IntelliJ HTTP Client: `http/api.http`. Terminal: `./http/smoke.sh`.
 
 ## Unit testler
 
-Veritabanı gerektirmez:
+Veritabanı / Kafka gerektirmez:
 
 ```bash
 ./mvnw test
@@ -222,21 +278,20 @@ Veritabanı gerektirmez:
 
 ## Modül / katman yapısı
 
-Her servis aynı paket düzenini kullanır:
-
 ```
+nefis-contracts    Kafka komut/event record + JSON serileştirme
 .../controller     REST + DTO (record)
 .../service        iş kuralları, transaction sınırı
 .../repository     Spring Data JPA
 .../domain         entity + enum
-.../event          Milestone 2+ Kafka mesajları için rezerv
+.../event          Kafka listener / OrderSagaOrchestrator
 .../exception      404 / 400 ProblemDetail
 ```
 
-Flyway migration'lar: `src/main/resources/db/migration/V1__*.sql`
+Flyway: `src/main/resources/db/migration/V1__*.sql` (+ order `V2__order_saga_columns.sql`).
 
-Hibernate `ddl-auto: validate` — şemayı JPA üretmez, Flyway üretir. Böylece production'daki gibi migration tek kaynak olur.
+Hibernate `ddl-auto: validate` — şemayı JPA üretmez, Flyway üretir.
 
 ## Sonraki adım
 
-Milestone 2: Kafka + orchestration-based Saga ("Sipariş Ver" akışı).
+Milestone 2.5: Transactional Outbox (order-service outbox tablosu + polling publisher).

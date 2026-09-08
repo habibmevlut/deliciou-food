@@ -1,4 +1,4 @@
 /**
- * Kafka payment-commands / payment-events Milestone 2'de buraya gelecek.
+ * payment-commands tüketicisi. REST CRUD hâlâ durur; saga bu handler üzerinden tahsilat/iade yapar.
  */
 package com.nefisyemek.payment.event;
