@@ -79,6 +79,75 @@ docker compose up order-db payment-db restaurant-db
 
 Yerel `application.yml` zaten host portlarına (`5433`/`5434`/`5435`) bakıyor.
 
+## IntelliJ IDEA ile derleme ve çalıştırma
+
+Servisleri container içinde değil, IDE'den debug ederek çalıştırmak için Java süreçlerini IntelliJ'e bırak; Postgres'i Docker'da tut.
+
+**IntelliJ ile çalışırken** `docker compose up --build` yapma — 8081/8082/8083 portları çakışır.
+
+### 1) Projeyi aç
+
+1. **File → Open** → repo kökündeki `pom.xml` dosyasını seç → **Open as Project**.
+2. Trust / Maven import uyarısını onayla.
+3. **File → Project Structure → Project SDK** = **21** (Eclipse Temurin / Oracle / Microsoft, fark etmez).
+   Language level da 21 olmalı; Maven `java.version` bunu zaten dayatır.
+4. Sağdaki **Maven** aracında kök proje `nefis-yemek` görünmeli, altında üç modül.
+5. **Settings → Build, Execution, Deployment → Build Tools → Maven**
+   - **Maven home path:** *Use Maven wrapper* (`./mvnw`)
+   - **JDK for importer:** 21
+
+İlk import'tan sonra Maven aracındaki yenile (Reload All Maven Projects) butonuna bas.
+
+### 2) Sadece veritabanlarını başlat
+
+Terminal (IntelliJ altındaki) veya harici shell:
+
+```bash
+docker compose up -d order-db payment-db restaurant-db
+```
+
+Üç Postgres ayağa kalkmadan servisler Flyway/`ddl-auto: validate` yüzünden **fail** olur.
+
+### 3) Build
+
+Run dropdown'dan **Nefis Yemek: Maven Build** (`clean verify`) veya Maven aracında kök `nefis-yemek` → **Lifecycle → verify**.
+
+Yeşil tik: üç modül derlendi, unit testler geçti.
+
+### 4) Servisleri çalıştır
+
+Run dropdown'da hazır konfigürasyonlar var:
+
+| Konfigürasyon | Ne yapar |
+| --- | --- |
+| **Nefis Yemek: 3 servis** | Üç uygulamayı birden başlatır (önerilen) |
+| `order-service` / `payment-service` / `restaurant-service` | `main` metodundan Application olarak çalıştırır |
+| `*-service (Maven)` | `spring-boot:run` — modül adı IntelliJ'de farklıysa bunu kullan |
+
+**Nefis Yemek: 3 servis** → yeşil Run (veya Debug).
+
+Konsolda `Started OrderServiceApplication`, `Started PaymentServiceApplication`, `Started RestaurantServiceApplication` görünmeli.
+
+`main` yanındaki yeşil üçgene basmak da aynı: `OrderServiceApplication` → Run.
+
+**spring-boot-devtools** var: kaynak kaydedince (Build → Build Project, varsayılan Ctrl/Cmd+F9) uygulama kendini yeniden başlatır.
+
+### 5) IntelliJ içinden dene
+
+`http/api.http` dosyasını aç (IntelliJ HTTP Client — Ultimate'te yerleşik). Satırın üstündeki **Run** ile health ve CRUD isteklerini gönder.
+
+Community Edition'da aynı URL'leri README'deki curl'lerle veya tarayıcıdan `/actuator/health` ile doğrula.
+
+### Sık karşılaşılan hatalar
+
+| Belirti | Çözüm |
+| --- | --- |
+| `Connection refused` / `HikariPool` Postgres'e bağlanamıyor | `docker compose ps` — `order-db` 5433, `payment-db` 5434, `restaurant-db` 5435 dinliyor mu? |
+| `Port 8081 was already in use` | Docker'daki Java servisleri de açık: `docker compose stop order-service payment-service restaurant-service` |
+| Run config: *module not specified* | Maven Reload; veya `order-service (Maven)` konfigürasyonunu kullan |
+| Flyway / `Schema-validation: missing table` | Yanlış DB'ye gidiyor — URL `localhost:5433/orderdb` olmalı, 5432 değil |
+| SDK is not defined | Project Structure → SDK 21 ekle, sonra Maven Reload |
+
 ## Test curl komutları
 
 Aşağıdaki komutlar `docker compose up` sonrası her üç servisi uçtan uca doğrular.

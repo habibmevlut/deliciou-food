@@ -4,7 +4,11 @@ target/
 .flattened-pom.xml
 
 # IDE
-.idea/
+.idea/*
+!.idea/runConfigurations/
+!.idea/runConfigurations/**
+!.idea/misc.xml
+!.idea/compiler.xml
 *.iml
 *.ipr
 *.iws

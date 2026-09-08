@@ -1,0 +1,67 @@
+### Health
+GET http://localhost:8081/actuator/health
+
+###
+GET http://localhost:8082/actuator/health
+
+###
+GET http://localhost:8083/actuator/health
+
+### Restaurant — oluştur
+# @name createRestaurant
+POST http://localhost:8083/api/restaurants
+Content-Type: application/json
+
+{
+  "name": "Adana Sofrası",
+  "address": "Caferağa Mah. Kadıköy / İstanbul",
+  "cuisine": "Türk",
+  "open": true
+}
+
+### Restaurant — liste
+GET http://localhost:8083/api/restaurants
+
+### Restaurant — tek kayıt
+GET http://localhost:8083/api/restaurants/{{createRestaurant.response.body.id}}
+
+### Restaurant — güncelle (kapat)
+PUT http://localhost:8083/api/restaurants/{{createRestaurant.response.body.id}}
+Content-Type: application/json
+
+{
+  "name": "Adana Sofrası",
+  "address": "Caferağa Mah. Kadıköy / İstanbul",
+  "cuisine": "Türk",
+  "open": false
+}
+
+### Order — oluştur
+# @name createOrder
+POST http://localhost:8081/api/orders
+Content-Type: application/json
+
+{
+  "customerId": "11111111-1111-1111-1111-111111111111",
+  "restaurantId": "22222222-2222-2222-2222-222222222222",
+  "totalAmount": 149.90
+}
+
+### Order — liste
+GET http://localhost:8081/api/orders
+
+### Order — tek kayıt
+GET http://localhost:8081/api/orders/{{createOrder.response.body.id}}
+
+### Payment — oluştur
+# @name createPayment
+POST http://localhost:8082/api/payments
+Content-Type: application/json
+
+{
+  "orderId": "{{createOrder.response.body.id}}",
+  "amount": 149.90
+}
+
+### Payment — liste
+GET http://localhost:8082/api/payments
