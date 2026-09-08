@@ -1,91 +1,580 @@
 {
   "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-nefisyemek0001",
     "name": "Nefis Yemek",
-    "description": "Milestone 1 — tüm istekler api-gateway :8080 üzerinden.",
+    "description": "Milestone 1 — tek kapı: tüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. Servisler IntelliJ'de ayakta (Nefis Yemek: tum servisler).\n2. Bu klasörü sırayla çalıştır: Health → Customer → Restaurant → Order → Payment → Delivery → Notification.\n3. Create istekleri id'yi koleksiyon değişkenine yazar; sonraki Get/Put onları kullanır.\n\nYeniden import: ben her milestone'da http/Nefis-Yemek.postman_collection.json dosyasını güncellerim.\nPostman → Import → dosyayı seç → Replace (aynı koleksiyonu güncelle).\n\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "gateway", "value": "http://localhost:8080" },
-    { "key": "customerId", "value": "" },
-    { "key": "restaurantId", "value": "" },
-    { "key": "orderId", "value": "" }
+    {
+      "key": "gateway",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "customerId",
+      "value": ""
+    },
+    {
+      "key": "restaurantId",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "paymentId",
+      "value": ""
+    },
+    {
+      "key": "deliveryId",
+      "value": ""
+    },
+    {
+      "key": "notificationId",
+      "value": ""
+    }
   ],
   "item": [
     {
-      "name": "Gateway health",
-      "request": { "method": "GET", "header": [], "url": "{{gateway}}/actuator/health" }
+      "name": "0. Gateway (tek kapı)",
+      "description": "Dışarıdan gördüğün tek adres. 8080 ayakta değilse hiçbir servise ulaşamazsın.",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/actuator/health",
+            "description": "Gateway'in kendisi. Backend'ler down olsa bile bu UP olabilir."
+          }
+        }
+      ]
     },
     {
-      "name": "Create restaurant",
-      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-        "if (pm.response.code === 201) pm.collectionVariables.set('restaurantId', pm.response.json().id);"
-      ]}}],
-      "request": {
-        "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": { "mode": "raw", "raw": "{\n  \"name\": \"Adana Sofrası\",\n  \"address\": \"Kadıköy\",\n  \"cuisine\": \"Türk\",\n  \"open\": true\n}" },
-        "url": "{{gateway}}/api/restaurants"
-      }
+      "name": "1. customer-service  /api/customers",
+      "description": "Kullanıcı + adres. Kendi Postgres'i (5437). Login/JWT Milestone 4.",
+      "item": [
+        {
+          "name": "Create customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/customers",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Ali Veli\",\n  \"email\": \"ali@example.com\",\n  \"phone\": \"5551112233\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const id = pm.response.json().id;",
+                  "  if (id) pm.collectionVariables.set('customerId', id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List customers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/customers"
+          }
+        },
+        {
+          "name": "Get customer",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/customers/{{customerId}}"
+          }
+        },
+        {
+          "name": "Update customer",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/customers/{{customerId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Ali Veli\",\n  \"email\": \"ali@example.com\",\n  \"phone\": \"5550000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Add address",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/customers/{{customerId}}/addresses",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Ev\",\n  \"street\": \"Caferağa\",\n  \"city\": \"İstanbul\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List addresses",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/customers/{{customerId}}/addresses"
+          }
+        }
+      ]
     },
     {
-      "name": "Create customer",
-      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-        "if (pm.response.code === 201) pm.collectionVariables.set('customerId', pm.response.json().id);"
-      ]}}],
-      "request": {
-        "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": { "mode": "raw", "raw": "{\n  \"fullName\": \"Ali Veli\",\n  \"email\": \"ali@example.com\",\n  \"phone\": \"5551112233\"\n}" },
-        "url": "{{gateway}}/api/customers"
-      }
+      "name": "2. restaurant-service  /api/restaurants",
+      "description": "Restoran kartı. Kendi Postgres'i (5435).",
+      "item": [
+        {
+          "name": "Create restaurant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/restaurants",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Adana Sofrası\",\n  \"address\": \"Kadıköy\",\n  \"cuisine\": \"Türk\",\n  \"open\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const id = pm.response.json().id;",
+                  "  if (id) pm.collectionVariables.set('restaurantId', id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List restaurants",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/restaurants"
+          }
+        },
+        {
+          "name": "Get restaurant",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/restaurants/{{restaurantId}}"
+          }
+        },
+        {
+          "name": "Close restaurant",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/restaurants/{{restaurantId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Adana Sofrası\",\n  \"address\": \"Kadıköy\",\n  \"cuisine\": \"Türk\",\n  \"open\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     {
-      "name": "Add address",
-      "request": {
-        "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": { "mode": "raw", "raw": "{\n  \"title\": \"Ev\",\n  \"street\": \"Caferağa\",\n  \"city\": \"İstanbul\"\n}" },
-        "url": "{{gateway}}/api/customers/{{customerId}}/addresses"
-      }
+      "name": "3. order-service  /api/orders",
+      "description": "Sipariş. restaurantId burada FK değil, sadece UUID (Database per Service).",
+      "item": [
+        {
+          "name": "Create order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"restaurantId\": \"{{restaurantId}}\",\n  \"totalAmount\": 149.9\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "status göndermezsen PENDING. Saga Milestone 2."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const id = pm.response.json().id;",
+                  "  if (id) pm.collectionVariables.set('orderId', id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/orders"
+          }
+        },
+        {
+          "name": "Get order",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/orders/{{orderId}}"
+          }
+        },
+        {
+          "name": "Confirm order",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/orders/{{orderId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"restaurantId\": \"{{restaurantId}}\",\n  \"totalAmount\": 149.9,\n  \"status\": \"CONFIRMED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     {
-      "name": "Create order",
-      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
-        "if (pm.response.code === 201) pm.collectionVariables.set('orderId', pm.response.json().id);"
-      ]}}],
-      "request": {
-        "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": { "mode": "raw", "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"restaurantId\": \"{{restaurantId}}\",\n  \"totalAmount\": 149.90\n}" },
-        "url": "{{gateway}}/api/orders"
-      }
+      "name": "4. payment-service  /api/payments",
+      "description": "Ödeme. order_id yine UUID referans; JOIN yok.",
+      "item": [
+        {
+          "name": "Create payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/payments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"amount\": 149.9\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const id = pm.response.json().id;",
+                  "  if (id) pm.collectionVariables.set('paymentId', id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List payments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/payments"
+          }
+        },
+        {
+          "name": "Get payment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/payments/{{paymentId}}"
+          }
+        },
+        {
+          "name": "Capture payment",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/payments/{{paymentId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"amount\": 149.9,\n  \"status\": \"CAPTURED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     {
-      "name": "Create payment",
-      "request": {
-        "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": { "mode": "raw", "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"amount\": 149.90\n}" },
-        "url": "{{gateway}}/api/payments"
-      }
+      "name": "5. delivery-service  /api/deliveries",
+      "description": "Kurye atama. Milestone 2'de saga bunu Kafka ile tetikleyecek.",
+      "item": [
+        {
+          "name": "Assign courier",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/deliveries",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"courierName\": \"Ahmet\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const id = pm.response.json().id;",
+                  "  if (id) pm.collectionVariables.set('deliveryId', id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List deliveries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/deliveries"
+          }
+        },
+        {
+          "name": "Get delivery",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/deliveries/{{deliveryId}}"
+          }
+        },
+        {
+          "name": "Mark delivered",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/deliveries/{{deliveryId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"courierName\": \"Ahmet\",\n  \"status\": \"DELIVERED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     {
-      "name": "Assign courier",
-      "request": {
-        "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": { "mode": "raw", "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"courierName\": \"Ahmet\"\n}" },
-        "url": "{{gateway}}/api/deliveries"
-      }
+      "name": "6. notification-service  /api/notifications",
+      "description": "Mock SMS/push. Kafka henüz yok; konsola [MOCK SMS] yazar.",
+      "item": [
+        {
+          "name": "Send mock SMS",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/notifications",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipient\": \"5551112233\",\n  \"channel\": \"SMS\",\n  \"message\": \"Siparis alindi\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const id = pm.response.json().id;",
+                  "  if (id) pm.collectionVariables.set('notificationId', id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List notifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/notifications"
+          }
+        },
+        {
+          "name": "Get notification",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/notifications/{{notificationId}}"
+          }
+        }
+      ]
     },
     {
-      "name": "Send mock SMS",
-      "request": {
-        "method": "POST",
-        "header": [{ "key": "Content-Type", "value": "application/json" }],
-        "body": { "mode": "raw", "raw": "{\n  \"recipient\": \"5551112233\",\n  \"channel\": \"SMS\",\n  \"message\": \"Siparis alindi\"\n}" },
-        "url": "{{gateway}}/api/notifications"
-      }
+      "name": "7. Hatalar",
+      "description": "Gateway aynı 404/400'ü backend'den olduğu gibi geçirir.",
+      "item": [
+        {
+          "name": "Order 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/orders/00000000-0000-0000-0000-000000000000"
+          }
+        },
+        {
+          "name": "Order 400 (negatif tutar)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/orders",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"00000000-0000-0000-0000-000000000001\",\n  \"restaurantId\": \"00000000-0000-0000-0000-000000000002\",\n  \"totalAmount\": -1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }
