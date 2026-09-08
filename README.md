@@ -2,6 +2,8 @@
 
 Kurgusal bir yemek sipariş platformu. Amaç production'a çıkmak değil; mikroservis pattern'lerini (Saga, CQRS, Outbox, Circuit Breaker, API Gateway, Distributed Tracing) gerçek kodla denemek.
 
+Milestone'lar **tek branch'te** birikir. README her zaman o ana kadar yapılanın tam halidir; görmek için branch değiştirmen gerekmez.
+
 Şu an **Milestone 1**: kalan servisler + API Gateway. Dış dünya yalnızca **:8080** üzerinden konuşur.
 
 ## Neden API Gateway?
