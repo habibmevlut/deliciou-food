@@ -140,6 +140,26 @@ Aşağıdaki sırayı **akış sırası** olarak oku. Her topic’te Seek → Ea
 
 `payment-commands` içinde bu senaryoda **Refund yok**. İade yalnızca kırmızı yolda.
 
+**Sadece payment tarafında mesaj görmek normal değil** (Senaryo A tamamlandıysa). Tek `payment-*` topic’i doluysa saga orada durmuştur; restoran/kurye komutu hiç yazılmamıştır. GET order status’una bak:
+
+| GET `/api/orders/{id}` | Kafka’da dolu olması gerekenler | Boşsa kim takıldı |
+| --- | --- | --- |
+| `AWAITING_PAYMENT` | çoğu zaman yalnız `payment-commands` | payment-service komutu okumadı (log: `PAYMENT CAPTURED` yok) |
+| `AWAITING_PAYMENT` ama `payment-events` dolu | `payment-commands` + `payment-events` | **order-service** event’i okumadı; `restaurant-commands` oluşmaz |
+| `AWAITING_RESTAURANT` | yukarıdakiler + `restaurant-commands` | restaurant-service |
+| `AWAITING_DELIVERY` | + `restaurant-events` + `delivery-commands` | delivery-service |
+| `CONFIRMED` | **altı topic** de dolu | Kafka UI yanlış bakıyor (aşağıdaki tuzaklar) |
+
+Kafka UI tuzakları (önce bunları ele):
+
+1. Topic adı `payment-topic` değil: `payment-commands` ve `payment-events` ayrı.
+2. Messages’ta **Newest / Latest** eski kaydı gizler → **Oldest / Earliest**.
+3. Üstteki arama kutusunu **temizle** (kısmi UUID diğer topic’lerde “No messages found” üretir).
+4. Sol **Topics** listesini yenile. `restaurant-commands` hiç oluşmadıysa listede yoktur; Kafka topic’i ilk mesajda yaratır.
+5. **Consumers** → `order-service` → `payment-events` **lag > 0** ise yönetmen event’i yutmuyor: order-service’i restart et.
+
+Takılı sipariş: `POST /api/orders/{id}/saga/replay` (Postman: **Saga adımını tekrarla**). Sonra GET order tekrar.
+
 ### A4. Consumers
 
 **Consumers** → `order-service`: `payment-events`, `restaurant-events`, `delivery-events` dinler (yönetmen event bekler).  
