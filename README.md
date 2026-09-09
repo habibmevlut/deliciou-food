@@ -35,7 +35,7 @@ Nasıl çalışıyor: `application.yml` içinde `Path=/api/orders/**` → `local
 | --- | --- |
 | 6 iş servisi + api-gateway, 6 Postgres, Flyway, CRUD | Transactional Outbox (M2.5) |
 | Spring Cloud Gateway (`:8080`) | JWT, Resilience4j, Zipkin (M4) |
-| Kafka KRaft (tek broker), 6 topic | Idempotent consumer tablosu (M3) |
+| Kafka KRaft (tek broker), 6 topic, Kafka UI `:8090` | Idempotent consumer tablosu (M3) |
 | `OrderSagaOrchestrator` + compensating iade | notification Kafka consumer |
 
 ## Mimari (M2)
@@ -54,6 +54,8 @@ Nasıl çalışıyor: `application.yml` içinde `Path=/api/orders/**` → `local
                     OrderSagaOrchestrator
                              │
                           Kafka :9092 (KRaft)
+                               │
+                          Kafka UI :8090
 ```
 
 ## Neden Saga? Neden 2PC değil?
@@ -106,6 +108,35 @@ Postman: **Sipariş Ver (restoran red)**. Body: `forceRestaurantReject: true`.
 
 Bayrak yoksa restoran **%20** `RANDOM_REJECT` eder (`nefis.restaurant.reject-probability`, env `RESTAURANT_REJECT_PROBABILITY`).
 
+## Kafka'yı izlemek (Kafka UI)
+
+Broker'ın kendisi bir web arayüzü sunmaz. Topic, mesaj ve consumer group görmek için compose'a **Kafbat Kafka UI** eklendi (`ghcr.io/kafbat/kafka-ui` — eski adı Provectus Kafka UI).
+
+Bu **Prometheus / Grafana değil**. O Milestone 4 (metrik, JVM, latency). Kafka UI = “şu an kuyrukta ne var?” tarayıcısı.
+
+```bash
+docker compose up -d
+# tarayıcı: http://localhost:8090
+```
+
+Saga attıktan sonra UI'da:
+
+| Menü | Ne göreceksin |
+| --- | --- |
+| **Topics** | `payment-commands`, `payment-events`, `restaurant-*`, `delivery-*` |
+| Topic → **Messages** | JSON komut/event (key = `orderId`) |
+| **Consumers** | `order-service`, `payment-service`, `restaurant-service`, `delivery-service` |
+
+Port **8090**: gateway zaten **8080**. Kafka UI API gateway'e bağlı değil; altyapı aracı.
+
+CLI hâlâ durur:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+```
+
+Masaüstü alternatif (zorunlu değil): Offset Explorer. Confluent Control Center bu laboratuvar için fazla ağır.
+
 ## Gateway route tablosu
 
 | Path | Hedef (IDE) | Docker URI |
@@ -152,6 +183,7 @@ notification-service konsola `[MOCK SMS] to=...` yazar; gerçek SMS yok. M2'de s
 | delivery-service | 8085 | — |
 | notification-service | 8086 | — |
 | kafka | 9092 | KRaft, tek broker |
+| kafka-ui | 8090 | http://localhost:8090 |
 | order-db | 5436 | `order` / `orderdb` |
 | payment-db | 5434 | `payment` / `paymentdb` |
 | restaurant-db | 5435 | `restaurant` / `restaurantdb` |
@@ -171,7 +203,7 @@ notification-service konsola `[MOCK SMS] to=...` yazar; gerçek SMS yok. M2'de s
 docker compose --profile apps up --build
 ```
 
-`--profile apps` olmazsa Postgres **ve Kafka** ayağa kalkar (IntelliJ için doğru). Java + gateway container'dan koşsun dersen profile gerekir.
+`--profile apps` olmazsa Postgres, Kafka **ve Kafka UI** (`:8090`) ayağa kalkar (IntelliJ için doğru). Java + gateway container'dan koşsun dersen profile gerekir.
 
 İlk build uzun sürebilir. Dışarıdan yalnızca gateway:
 
@@ -184,11 +216,11 @@ Sadece altyapıyı ayağa kaldırıp servisleri IDE'den çalıştırmak için:
 
 ```bash
 docker compose up -d
-docker compose ps   # nefis-kafka 0.0.0.0:9092 ve 6 Postgres
+docker compose ps   # nefis-kafka :9092, nefis-kafka-ui :8090, 6 Postgres
 # IntelliJ: Nefis Yemek: tum servisler (gateway dahil)
 ```
 
-Topic'leri görmek:
+Topic / mesaj: tarayıcıda [http://localhost:8090](http://localhost:8090) (Kafka UI). CLI:
 
 ```bash
 docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
@@ -198,7 +230,7 @@ docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server loca
 
 Servisleri container içinde değil, IDE'den debug ederek çalıştırmak için Java süreçlerini IntelliJ'e bırak; Postgres **ve Kafka**'yı Docker'da tut.
 
-**IntelliJ ile çalışırken** Java container'larını açma. `docker compose up` yalnızca Postgres + Kafka başlatır. Tam stack için: `docker compose --profile apps up --build`.
+**IntelliJ ile çalışırken** Java container'larını açma. `docker compose up` Postgres + Kafka + Kafka UI başlatır. Tam stack için: `docker compose --profile apps up --build`.
 
 ### 1) Projeyi aç
 
@@ -219,7 +251,7 @@ docker compose up -d
 docker compose ps
 ```
 
-`nefis-order-db` satırında `0.0.0.0:5436->5432/tcp`, `nefis-kafka` satırında `9092` görünmeli.
+`nefis-order-db` satırında `0.0.0.0:5436->5432/tcp`, `nefis-kafka` satırında `9092`, `nefis-kafka-ui` satırında `8090` görünmeli. Tarayıcı: http://localhost:8090
 
 ### 3) Build
 
@@ -250,6 +282,7 @@ Konsolda `Started ApiGatewayApplication` ve `*ServiceApplication` satırları g�
 | `nefis-order-db` healthy ama `PORTS` sütunu boş | Host **5433** başka bir container'da. Order DB **5436** |
 | `Connection refused` / `HikariPool` | `docker compose ps` — Postgres portları + `nefis-kafka :9092` |
 | `Connection to localhost:9092 refused` | Kafka yok: `docker compose up -d` |
+| `localhost:8090` açılmıyor | `docker compose ps` — `nefis-kafka-ui` UP mi? İlk pull uzun sürebilir. Port 8090 doluysa değiştir |
 | `Port 8081 was already in use` | `docker compose --profile apps stop` |
 | Run config: *module not specified* | Maven Reload |
 | Flyway / `Schema-validation: missing table` | Order URL `localhost:5436/orderdb`. V2 migration `cancel_reason` ekler |

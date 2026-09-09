@@ -13,9 +13,10 @@
 #   delivery-service    8085    delivery-db       5438
 #   notification-service 8086   notification-db   5439
 #   kafka               9092
+#   kafka-ui            8090    http://localhost:8090
 #
 # 5433 kullanılmıyor (socialflow vs.).
-# `docker compose up` → Postgres + Kafka (IntelliJ için doğru).
+# `docker compose up` → Postgres + Kafka + Kafka UI (IntelliJ için doğru).
 # Tam stack: `docker compose --profile apps up --build`
 
 name: nefis-yemek
@@ -154,6 +155,21 @@ services:
       timeout: 10s
       retries: 12
       start_period: 20s
+    restart: unless-stopped
+
+  # Topic / mesaj / consumer group tarayıcısı. Prometheus/Grafana değil (o M4).
+  # Gateway :8080 dolu olduğu için UI host portu 8090.
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.3.0
+    container_name: nefis-kafka-ui
+    ports:
+      - "8090:8080"
+    environment:
+      DYNAMIC_CONFIG_ENABLED: "true"
+      KAFKA_CLUSTERS_0_NAME: nefis-yemek
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      kafka: { condition: service_healthy }
     restart: unless-stopped
 
   order-service:
