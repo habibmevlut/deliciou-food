@@ -1,5 +1,6 @@
 package com.nefisyemek.restaurant.event;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +16,11 @@ public class RestaurantDecisionPolicy {
     private final double rejectProbability;
     private final DoubleSupplier random;
 
+    /**
+     * İki kurucu var (test için DoubleSupplier). Spring birden fazla kurucuda
+     * {@code @Autowired} görmezse no-arg arar — o da yok, uygulama ayağa kalkmaz.
+     */
+    @Autowired
     public RestaurantDecisionPolicy(
             @Value("${nefis.restaurant.reject-probability:0.2}") double rejectProbability
     ) {

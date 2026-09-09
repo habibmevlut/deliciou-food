@@ -272,6 +272,7 @@ Konsolda `Started ApiGatewayApplication` ve `*ServiceApplication` satırları g�
 | Run config: *module not specified* | Maven Reload |
 | Flyway / `Schema-validation: missing table` | Order URL `localhost:5436/orderdb`. V2 migration `cancel_reason` ekler |
 | SDK is not defined | Project Structure → SDK 21, Maven Reload |
+| restaurant-service `No default constructor` / `RestaurantDecisionPolicy` | İki kurucu varken Spring `@Autowired` ister. `git pull` sonrası Maven Reload ve restaurant-service restart |
 | payment-service `trusted packages` / `SerializationException` döngüsü | JsonDeserializer `com.nefisyemek.contracts` alt paketleri (`command`, `event`) kapsamaz. Kod `com.nefisyemek.contracts.*` kullanır. `git pull`, Maven Reload, order/payment/restaurant/delivery'yi restart. Kafka'yı silme — offset 0'daki mesaj geçerlidir. |
 
 ## API'yi denemek (Postman)
