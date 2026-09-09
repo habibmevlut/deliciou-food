@@ -85,13 +85,9 @@ Komut = "yap". Event = "oldu". Orchestrator event dinler, bir sonraki komutu yol
 
 ## Mutlu senaryo nasıl tetiklenir?
 
-1. `docker compose up -d` → 6 Postgres **ve Kafka**
-2. IntelliJ: **Nefis Yemek: tum servisler**
-3. Postman: Customer oluştur → Restaurant oluştur → **8. Saga → Sipariş Ver (mutlu yol)**
-4. Body'de `forceRestaurantAccept: true` var; %20 rastgele red devre dışı. 1–3 sn sonra `GET /api/orders/{{orderId}}` → `CONFIRMED`
-5. `GET /api/payments` → `CAPTURED`. `GET /api/deliveries` → kurye adı (`Kurye-Ada` / `Can` / `Ece`)
+Adım adım (üç senaryo + Kafka UI): [`docs/kafka-saga-lab.md`](docs/kafka-saga-lab.md)
 
-`POST /api/orders` `status` göndermezsen saga başlar. `status: "PENDING"` gönderirsen eski CRUD yolu (Kafka yok) — izole deneme için.
+Kısaca: `docker compose up -d` → IntelliJ tum servisler → Postman klasör **8** mutlu yol (`forceRestaurantAccept: true`) → 1–3 sn sonra GET order = `CONFIRMED`. `status: "PENDING"` = saga yok (CRUD).
 
 ## Red / compensate hangi loglarda?
 
@@ -276,6 +272,7 @@ Konsolda `Started ApiGatewayApplication` ve `*ServiceApplication` satırları g�
 | Run config: *module not specified* | Maven Reload |
 | Flyway / `Schema-validation: missing table` | Order URL `localhost:5436/orderdb`. V2 migration `cancel_reason` ekler |
 | SDK is not defined | Project Structure → SDK 21, Maven Reload |
+| payment-service `trusted packages` / `SerializationException` döngüsü | JsonDeserializer `com.nefisyemek.contracts` alt paketleri (`command`, `event`) kapsamaz. Kod `com.nefisyemek.contracts.*` kullanır. `git pull`, Maven Reload, order/payment/restaurant/delivery'yi restart. Kafka'yı silme — offset 0'daki mesaj geçerlidir. |
 
 ## API'yi denemek (Postman)
 

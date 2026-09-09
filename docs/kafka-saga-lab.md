@@ -257,6 +257,7 @@ HTTP status, orchestrator’ın Kafka event’lerinden türetilmiş özetidir. A
 | `8090` açılmıyor | `docker compose ps` → `nefis-kafka-ui` |
 | `8080` down | Gateway çalışmıyor; Postman’ın hepsi 8080 |
 | CONFIRMED olmuyor, AWAITING_* takılı | İlgili servis log’u: payment / restaurant / delivery ayakta mı, Kafka `localhost:9092` mi |
+| `trusted packages` / `SerializationException` / payment log spam | `com.nefisyemek.contracts` alt paketleri kapsamaz. Düzeltme: `com.nefisyemek.contracts.*`. `git pull`, **Maven Reload**, 4 Kafka servisini (order/payment/restaurant/delivery) yeniden başlat. Offset 0’daki mesaj geçerlidir; Kafka’yı silmene gerek yok. |
 
 ---
 

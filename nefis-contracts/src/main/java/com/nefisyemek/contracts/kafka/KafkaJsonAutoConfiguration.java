@@ -1,8 +1,11 @@
 package com.nefisyemek.contracts.kafka;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -17,8 +20,11 @@ import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
+import org.springframework.util.backoff.FixedBackOff;
 
 import java.util.Map;
 
@@ -31,6 +37,14 @@ import java.util.Map;
 @ConditionalOnClass(KafkaTemplate.class)
 @ConditionalOnProperty(name = "nefis.kafka.enabled", havingValue = "true", matchIfMissing = true)
 public class KafkaJsonAutoConfiguration {
+
+    private static final Logger log = LoggerFactory.getLogger(KafkaJsonAutoConfiguration.class);
+
+    /**
+     * JsonDeserializer paket adını birebir eşler: {@code com.nefisyemek.contracts}
+     * alt paketleri ({@code .command}, {@code .event}) kapsamaz. {@code .*} şart.
+     */
+    static final String TRUSTED_PACKAGES = "com.nefisyemek.contracts.*";
 
     @Bean
     public ProducerFactory<String, Object> kafkaProducerFactory(
@@ -56,21 +70,43 @@ public class KafkaJsonAutoConfiguration {
             ObjectProvider<SslBundles> sslBundles
     ) {
         Map<String, Object> props = properties.buildConsumerProperties(sslBundles.getIfAvailable());
-        JsonDeserializer<Object> deserializer = new JsonDeserializer<>(Object.class, objectMapper, true);
-        deserializer.addTrustedPackages("com.nefisyemek.contracts");
-        deserializer.setUseTypeHeaders(true);
-        deserializer.setRemoveTypeHeaders(false);
-        return new DefaultKafkaConsumerFactory<>(props, new StringDeserializer(), deserializer);
+        ErrorHandlingDeserializer<String> keyDeserializer =
+                new ErrorHandlingDeserializer<>(new StringDeserializer());
+        ErrorHandlingDeserializer<Object> valueDeserializer =
+                new ErrorHandlingDeserializer<>(jsonDeserializer(objectMapper));
+        return new DefaultKafkaConsumerFactory<>(props, keyDeserializer, valueDeserializer);
+    }
+
+    @Bean
+    public DefaultErrorHandler kafkaErrorHandler() {
+        // Deserialize hatası DefaultErrorHandler'a gelmez; ErrorHandlingDeserializer sarmalayınca
+        // kayıt atlanır, consumer offset 0'da sonsuz döngüye girmez (Kafka UI'dan bozuk mesaj vs.).
+        return new DefaultErrorHandler(KafkaJsonAutoConfiguration::logSkippedRecord, new FixedBackOff(0L, 0L));
     }
 
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, Object> kafkaListenerContainerFactory(
-            ConsumerFactory<String, Object> kafkaConsumerFactory
+            ConsumerFactory<String, Object> kafkaConsumerFactory,
+            DefaultErrorHandler kafkaErrorHandler
     ) {
         ConcurrentKafkaListenerContainerFactory<String, Object> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(kafkaConsumerFactory);
+        factory.setCommonErrorHandler(kafkaErrorHandler);
         factory.setConcurrency(1);
         return factory;
+    }
+
+    static JsonDeserializer<Object> jsonDeserializer(ObjectMapper objectMapper) {
+        JsonDeserializer<Object> deserializer = new JsonDeserializer<>(Object.class, objectMapper, true);
+        deserializer.addTrustedPackages(TRUSTED_PACKAGES);
+        deserializer.setUseTypeHeaders(true);
+        deserializer.setRemoveTypeHeaders(false);
+        return deserializer;
+    }
+
+    private static void logSkippedRecord(ConsumerRecord<?, ?> record, Exception exception) {
+        log.warn("Kafka kayıt atlandı topic={} partition={} offset={}: {}",
+                record.topic(), record.partition(), record.offset(), exception.getMessage());
     }
 }
