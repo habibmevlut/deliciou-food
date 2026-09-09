@@ -6,6 +6,7 @@ import com.nefisyemek.order.controller.dto.UpdateOrderRequest;
 import com.nefisyemek.order.domain.Order;
 import com.nefisyemek.order.domain.OrderStatus;
 import com.nefisyemek.order.event.OrderSagaOrchestrator;
+import com.nefisyemek.order.exception.IllegalOrderStateException;
 import com.nefisyemek.order.exception.ResourceNotFoundException;
 import com.nefisyemek.order.repository.OrderRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,6 +57,25 @@ public class OrderService {
     @Transactional(readOnly = true)
     public OrderResponse findById(UUID id) {
         return OrderResponse.from(getOrder(id));
+    }
+
+    /**
+     * Kafka komutunu o anki saga adımı için tekrar yayınlar. REST ile payment oluşturmaz.
+     */
+    @Transactional
+    public OrderResponse replaySaga(UUID id) {
+        if (saga == null) {
+            throw new IllegalOrderStateException("Kafka saga kapalı; replay yok");
+        }
+        Order order = getOrder(id);
+        if (order.getStatus() != OrderStatus.AWAITING_PAYMENT
+                && order.getStatus() != OrderStatus.AWAITING_RESTAURANT
+                && order.getStatus() != OrderStatus.AWAITING_DELIVERY) {
+            throw new IllegalOrderStateException(
+                    "Saga replay yalnızca AWAITING_* için. status=" + order.getStatus());
+        }
+        saga.replayCurrentStep(order);
+        return OrderResponse.from(order);
     }
 
     @Transactional

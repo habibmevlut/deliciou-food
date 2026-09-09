@@ -14,6 +14,7 @@ import com.nefisyemek.contracts.event.RestaurantAcceptedEvent;
 import com.nefisyemek.contracts.event.RestaurantRejectedEvent;
 import com.nefisyemek.order.domain.Order;
 import com.nefisyemek.order.domain.OrderStatus;
+import com.nefisyemek.order.exception.IllegalOrderStateException;
 import com.nefisyemek.order.repository.OrderRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,6 +60,34 @@ public class OrderSagaOrchestrator {
         );
         kafka.send(Topics.PAYMENT_COMMANDS, key(order.getId()), command);
         log.info("SAGA start order={} status=AWAITING_PAYMENT -> {}", order.getId(), Topics.PAYMENT_COMMANDS);
+    }
+
+    /**
+     * Takılı saga: komut Kafka'da kayboldu veya consumer o an okuyamadı.
+     * Status aynı kalır; yalnızca o adımın komutu yeniden yazılır (idempotent consumer varsayımı).
+     */
+    public void replayCurrentStep(Order order) {
+        switch (order.getStatus()) {
+            case AWAITING_PAYMENT -> {
+                kafka.send(Topics.PAYMENT_COMMANDS, key(order.getId()), ChargePaymentCommand.of(
+                        order.getId(), order.getCustomerId(), order.getTotalAmount()));
+                log.info("SAGA replay order={} -> {}", order.getId(), Topics.PAYMENT_COMMANDS);
+            }
+            case AWAITING_RESTAURANT -> {
+                kafka.send(Topics.RESTAURANT_COMMANDS, key(order.getId()), ReserveRestaurantCommand.of(
+                        order.getId(),
+                        order.getRestaurantId(),
+                        order.isForceRestaurantReject(),
+                        order.isForceRestaurantAccept()));
+                log.info("SAGA replay order={} -> {}", order.getId(), Topics.RESTAURANT_COMMANDS);
+            }
+            case AWAITING_DELIVERY -> {
+                kafka.send(Topics.DELIVERY_COMMANDS, key(order.getId()), AssignCourierCommand.of(order.getId()));
+                log.info("SAGA replay order={} -> {}", order.getId(), Topics.DELIVERY_COMMANDS);
+            }
+            default -> throw new IllegalOrderStateException(
+                    "Saga replay yalnızca AWAITING_* için. status=" + order.getStatus());
+        }
     }
 
     @KafkaListener(topics = Topics.PAYMENT_EVENTS, groupId = "${spring.kafka.consumer.group-id}")

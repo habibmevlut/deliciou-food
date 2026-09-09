@@ -6,6 +6,7 @@ import com.nefisyemek.order.controller.dto.UpdateOrderRequest;
 import com.nefisyemek.order.domain.Order;
 import com.nefisyemek.order.domain.OrderStatus;
 import com.nefisyemek.order.event.OrderSagaOrchestrator;
+import com.nefisyemek.order.exception.IllegalOrderStateException;
 import com.nefisyemek.order.exception.ResourceNotFoundException;
 import com.nefisyemek.order.repository.OrderRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -113,5 +114,29 @@ class OrderServiceTest {
         ));
 
         assertThat(orderService.findAll()).hasSize(1);
+    }
+
+    @Test
+    void replaySagaResendsCurrentStep() {
+        UUID id = UUID.randomUUID();
+        Order existing = new Order(UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("149.90"),
+                OrderStatus.AWAITING_PAYMENT);
+        when(orderRepository.findById(id)).thenReturn(Optional.of(existing));
+
+        orderService.replaySaga(id);
+
+        verify(saga).replayCurrentStep(existing);
+    }
+
+    @Test
+    void replaySagaRejectsConfirmed() {
+        UUID id = UUID.randomUUID();
+        Order existing = new Order(UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("149.90"),
+                OrderStatus.CONFIRMED);
+        when(orderRepository.findById(id)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> orderService.replaySaga(id))
+                .isInstanceOf(IllegalOrderStateException.class);
+        verify(saga, never()).replayCurrentStep(any());
     }
 }

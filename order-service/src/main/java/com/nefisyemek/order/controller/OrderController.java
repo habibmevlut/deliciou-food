@@ -50,6 +50,11 @@ public class OrderController {
         return orderService.findById(id);
     }
 
+    @PostMapping("/{id}/saga/replay")
+    public OrderResponse replaySaga(@PathVariable UUID id) {
+        return orderService.replaySaga(id);
+    }
+
     @PutMapping("/{id}")
     public OrderResponse update(@PathVariable UUID id, @Valid @RequestBody UpdateOrderRequest request) {
         return orderService.update(id, request);

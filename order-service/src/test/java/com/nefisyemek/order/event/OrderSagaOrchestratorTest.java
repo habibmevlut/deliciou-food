@@ -138,6 +138,18 @@ class OrderSagaOrchestratorTest {
         verifyNoInteractions(kafka);
     }
 
+    @Test
+    void replayAwaitingPaymentResendsChargeCommand() {
+        Order order = persistedOrder(OrderStatus.AWAITING_PAYMENT);
+
+        saga.replayCurrentStep(order);
+
+        ArgumentCaptor<Object> payload = ArgumentCaptor.forClass(Object.class);
+        verify(kafka).send(eq(Topics.PAYMENT_COMMANDS), eq(order.getId().toString()), payload.capture());
+        assertThat(payload.getValue()).isInstanceOf(ChargePaymentCommand.class);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.AWAITING_PAYMENT);
+    }
+
     private Order persistedOrder(OrderStatus status) {
         Order order = new Order(UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("149.90"), status);
         ReflectionTestUtils.setField(order, "id", UUID.randomUUID());

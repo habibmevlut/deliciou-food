@@ -587,7 +587,16 @@
             "method": "GET",
             "header": [],
             "url": "{{gateway}}/api/orders/{{orderId}}",
-            "description": "2–3 saniye bekle, tekrar gönder. Mutlu yol: CONFIRMED. Red: CANCELLED + cancelReason."
+            "description": "2–3 saniye bekle, tekrar gönder. Mutlu yol: CONFIRMED. Red: CANCELLED + cancelReason. AWAITING_PAYMENT takılıysa payment-events boş olabilir — aşağıdaki replay'i kullan."
+          }
+        },
+        {
+          "name": "Saga adımını tekrarla (takılı AWAITING_*)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{gateway}}/api/orders/{{orderId}}/saga/replay",
+            "description": "REST ile payment oluşturmaz. AWAITING_PAYMENT ise ChargePaymentCommand'ı tekrar payment-commands'a yazar. payment-service ayakta olmalı."
           }
         },
         {

@@ -20,6 +20,13 @@ public class RestExceptionHandler {
         return problem;
     }
 
+    @ExceptionHandler(IllegalOrderStateException.class)
+    public ProblemDetail handleConflict(IllegalOrderStateException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Illegal order state");
+        return problem;
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidation(MethodArgumentNotValidException ex) {
         Map<String, String> errors = ex.getBindingResult().getFieldErrors().stream()
