@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-nefisyemek0001",
     "name": "Nefis Yemek",
-    "description": "Milestone 2 — tek kapı + Saga. Tüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. docker compose up -d (Postgres + Kafka + Kafka UI :8090), sonra IntelliJ: Nefis Yemek: tum servisler.\n2. CRUD için 1–7. Asıl ders: 8. Saga — Sipariş Ver.\n3. Create istekleri id'yi koleksiyon değişkenine yazar.\n4. Kafka mesajları: tarayıcı http://localhost:8090 (Topics / Messages / Consumers).\n\nYeniden import: Postman → Import → Replace (koleksiyon id sabit).\n\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
+    "description": "Milestone 2 — tek kapı + Saga. Tüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. docker compose up -d (Postgres + Kafka + Kafka UI :8090), sonra IntelliJ: Nefis Yemek: tum servisler.\n2. CRUD için 1–7. Asıl ders: 8. Saga — Sipariş Ver.\n3. Create istekleri id'yi koleksiyon değişkenine yazar.\n4. Kafka lab (büyük pencere, adım adım): docs/kafka-saga-lab.md — UI http://localhost:8090\n\nYeniden import: Postman → Import → Replace (koleksiyon id sabit).\n\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -542,7 +542,7 @@
     },
     {
       "name": "8. Saga — Sipariş Ver",
-      "description": "POST /api/orders (status yok) orchestrator'ı başlatır. 1–3 sn sonra Get order.\n\nMutlu yol: CONFIRMED + payment CAPTURED + delivery ASSIGNED.\nRed: CANCELLED + cancelReason + payment REFUNDED.\n\nLog'lar: order-service SAGA *, payment-service PAYMENT *, restaurant-service RESTAURANT REJECT/ACCEPT.",
+      "description": "POST /api/orders (status yok) orchestrator'ı başlatır. Adım adım Kafka UI lab: docs/kafka-saga-lab.md (http://localhost:8090).\n\nMutlu yol: CONFIRMED + payment CAPTURED + delivery ASSIGNED.\nRed: CANCELLED + cancelReason + payment REFUNDED.",
       "item": [
         {
           "name": "Sipariş Ver (mutlu yol)",

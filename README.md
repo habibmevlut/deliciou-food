@@ -110,32 +110,21 @@ Bayrak yoksa restoran **%20** `RANDOM_REJECT` eder (`nefis.restaurant.reject-pro
 
 ## Kafka'yı izlemek (Kafka UI)
 
-Broker'ın kendisi bir web arayüzü sunmaz. Topic, mesaj ve consumer group görmek için compose'a **Kafbat Kafka UI** eklendi (`ghcr.io/kafbat/kafka-ui` — eski adı Provectus Kafka UI).
+Broker'ın kendisi bir web arayüzü sunmaz. Topic, mesaj ve consumer group görmek için compose'a **Kafbat Kafka UI** eklendi.
 
-Bu **Prometheus / Grafana değil**. O Milestone 4 (metrik, JVM, latency). Kafka UI = “şu an kuyrukta ne var?” tarayıcısı.
+**Adım adım senaryolar (Postman + Kafka UI, büyük pencere):** [`docs/kafka-saga-lab.md`](docs/kafka-saga-lab.md)
+
+Kısaca: [http://localhost:8090](http://localhost:8090) — cluster `nefis-yemek`. Port **8090** (gateway **8080**). Bu Prometheus/Grafana değil (M4).
 
 ```bash
 docker compose up -d
-# tarayıcı: http://localhost:8090
 ```
-
-Saga attıktan sonra UI'da:
 
 | Menü | Ne göreceksin |
 | --- | --- |
 | **Topics** | `payment-commands`, `payment-events`, `restaurant-*`, `delivery-*` |
-| Topic → **Messages** | JSON komut/event (key = `orderId`) |
+| Topic → **Messages** (Seek: Earliest) | JSON, key = `orderId` |
 | **Consumers** | `order-service`, `payment-service`, `restaurant-service`, `delivery-service` |
-
-Port **8090**: gateway zaten **8080**. Kafka UI API gateway'e bağlı değil; altyapı aracı.
-
-CLI hâlâ durur:
-
-```bash
-docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
-```
-
-Masaüstü alternatif (zorunlu değil): Offset Explorer. Confluent Control Center bu laboratuvar için fazla ağır.
 
 ## Gateway route tablosu
 
