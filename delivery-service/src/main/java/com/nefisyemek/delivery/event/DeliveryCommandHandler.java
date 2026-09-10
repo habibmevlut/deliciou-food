@@ -3,6 +3,7 @@ package com.nefisyemek.delivery.event;
 import com.nefisyemek.contracts.Topics;
 import com.nefisyemek.contracts.command.AssignCourierCommand;
 import com.nefisyemek.contracts.event.CourierAssignedEvent;
+import com.nefisyemek.contracts.kafka.KafkaPayloads;
 import com.nefisyemek.delivery.domain.Delivery;
 import com.nefisyemek.delivery.service.DeliveryService;
 import org.slf4j.Logger;
@@ -10,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -31,10 +33,11 @@ public class DeliveryCommandHandler {
     }
 
     @KafkaListener(topics = Topics.DELIVERY_COMMANDS, groupId = "${spring.kafka.consumer.group-id}")
-    public void onCommand(Object command) {
+    public void onCommand(@Payload Object incoming) {
+        Object command = KafkaPayloads.unwrap(incoming);
         if (!(command instanceof AssignCourierCommand assign)) {
-            log.debug("DELIVERY ignored command type={}",
-                    command == null ? "null" : command.getClass().getSimpleName());
+            log.warn("DELIVERY ignored command type={}",
+                    command == null ? "null" : command.getClass().getName());
             return;
         }
         String courier = pickCourier(assign.orderId());

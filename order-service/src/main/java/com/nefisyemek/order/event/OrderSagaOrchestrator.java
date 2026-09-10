@@ -12,6 +12,7 @@ import com.nefisyemek.contracts.event.PaymentFailedEvent;
 import com.nefisyemek.contracts.event.PaymentRefundedEvent;
 import com.nefisyemek.contracts.event.RestaurantAcceptedEvent;
 import com.nefisyemek.contracts.event.RestaurantRejectedEvent;
+import com.nefisyemek.contracts.kafka.KafkaPayloads;
 import com.nefisyemek.order.domain.Order;
 import com.nefisyemek.order.domain.OrderStatus;
 import com.nefisyemek.order.exception.IllegalOrderStateException;
@@ -21,6 +22,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -92,7 +94,8 @@ public class OrderSagaOrchestrator {
 
     @KafkaListener(topics = Topics.PAYMENT_EVENTS, groupId = "${spring.kafka.consumer.group-id}")
     @Transactional
-    public void onPaymentEvent(Object event) {
+    public void onPaymentEvent(@Payload Object incoming) {
+        Object event = KafkaPayloads.unwrap(incoming);
         log.info("SAGA payment-events type={}", event == null ? "null" : event.getClass().getName());
         switch (event) {
             case PaymentChargedEvent charged -> onPaymentCharged(charged);
@@ -106,7 +109,8 @@ public class OrderSagaOrchestrator {
 
     @KafkaListener(topics = Topics.RESTAURANT_EVENTS, groupId = "${spring.kafka.consumer.group-id}")
     @Transactional
-    public void onRestaurantEvent(Object event) {
+    public void onRestaurantEvent(@Payload Object incoming) {
+        Object event = KafkaPayloads.unwrap(incoming);
         switch (event) {
             case RestaurantAcceptedEvent accepted -> onRestaurantAccepted(accepted);
             case RestaurantRejectedEvent rejected -> onRestaurantRejected(rejected);
@@ -116,7 +120,8 @@ public class OrderSagaOrchestrator {
 
     @KafkaListener(topics = Topics.DELIVERY_EVENTS, groupId = "${spring.kafka.consumer.group-id}")
     @Transactional
-    public void onDeliveryEvent(Object event) {
+    public void onDeliveryEvent(@Payload Object incoming) {
+        Object event = KafkaPayloads.unwrap(incoming);
         switch (event) {
             case CourierAssignedEvent assigned -> onCourierAssigned(assigned);
             case CourierAssignmentFailedEvent failed -> onCourierFailed(failed);

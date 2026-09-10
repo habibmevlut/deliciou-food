@@ -4,11 +4,13 @@ import com.nefisyemek.contracts.Topics;
 import com.nefisyemek.contracts.command.ReserveRestaurantCommand;
 import com.nefisyemek.contracts.event.RestaurantAcceptedEvent;
 import com.nefisyemek.contracts.event.RestaurantRejectedEvent;
+import com.nefisyemek.contracts.kafka.KafkaPayloads;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -26,7 +28,8 @@ public class RestaurantCommandHandler {
     }
 
     @KafkaListener(topics = Topics.RESTAURANT_COMMANDS, groupId = "${spring.kafka.consumer.group-id}")
-    public void onCommand(Object command) {
+    public void onCommand(@Payload Object incoming) {
+        Object command = KafkaPayloads.unwrap(incoming);
         if (!(command instanceof ReserveRestaurantCommand reserve)) {
             log.warn("RESTAURANT ignored command type={}",
                     command == null ? "null" : command.getClass().getName());

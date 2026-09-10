@@ -6,6 +6,7 @@ import com.nefisyemek.contracts.command.RefundPaymentCommand;
 import com.nefisyemek.contracts.event.PaymentChargedEvent;
 import com.nefisyemek.contracts.event.PaymentFailedEvent;
 import com.nefisyemek.contracts.event.PaymentRefundedEvent;
+import com.nefisyemek.contracts.kafka.KafkaPayloads;
 import com.nefisyemek.payment.domain.Payment;
 import com.nefisyemek.payment.domain.PaymentStatus;
 import com.nefisyemek.payment.service.PaymentService;
@@ -14,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -31,7 +33,8 @@ public class PaymentCommandHandler {
     }
 
     @KafkaListener(topics = Topics.PAYMENT_COMMANDS, groupId = "${spring.kafka.consumer.group-id}")
-    public void onCommand(Object command) {
+    public void onCommand(@Payload Object incoming) {
+        Object command = KafkaPayloads.unwrap(incoming);
         log.info("PAYMENT command type={}", command == null ? "null" : command.getClass().getName());
         switch (command) {
             case ChargePaymentCommand charge -> charge(charge);

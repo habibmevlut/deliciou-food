@@ -307,7 +307,7 @@ HTTP status, orchestrator’ın Kafka event’lerinden türetilmiş özetidir. A
 | `8090` açılmıyor | `docker compose ps` → `nefis-kafka-ui` |
 | `8080` down | Gateway çalışmıyor; Postman’ın hepsi 8080 |
 | `AWAITING_PAYMENT` takılı, `payment-events` boş | Payment REST’i atlamadın. Orchestrator `payment-commands`’a yazdı; event henüz yok. Kafka UI’da **Topics → payment-commands** (Events değil), Seek **Oldest**, arama kutusunu temizle, Key = tam UUID. `Newest` + kısmi UUID araması boş gösterebilir. payment-service deserializer hatası yaşadıysa `git pull`, servisleri restart, sonra `POST /api/orders/{id}/saga/replay`. |
-| `trusted packages` / `SerializationException` / payment log spam | `com.nefisyemek.contracts` alt paketleri kapsamaz. Düzeltme: `com.nefisyemek.contracts.*`. `git pull`, **Maven Reload**, 4 Kafka servisini (order/payment/restaurant/delivery) yeniden başlat. Offset 0’daki mesaj geçerlidir; Kafka’yı silmene gerek yok. |
+| `PAYMENT ignored command type=...ConsumerRecord` | Listener `Object` parametresi payload değil tüm Kafka kaydı oluyor. `@Payload` + unwrap düzeltmesi. `git pull`, Maven Reload, 4 servisi restart, sonra **Saga adımını tekrarla**. |
 
 ---
 
