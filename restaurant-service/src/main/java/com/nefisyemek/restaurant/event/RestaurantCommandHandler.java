@@ -28,8 +28,8 @@ public class RestaurantCommandHandler {
     @KafkaListener(topics = Topics.RESTAURANT_COMMANDS, groupId = "${spring.kafka.consumer.group-id}")
     public void onCommand(Object command) {
         if (!(command instanceof ReserveRestaurantCommand reserve)) {
-            log.debug("RESTAURANT ignored command type={}",
-                    command == null ? "null" : command.getClass().getSimpleName());
+            log.warn("RESTAURANT ignored command type={}",
+                    command == null ? "null" : command.getClass().getName());
             return;
         }
         boolean reject = policy.shouldReject(reserve.forceReject(), reserve.forceAccept());

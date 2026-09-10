@@ -114,16 +114,46 @@ Cevap hemen gelir, status çoğu zaman `AWAITING_PAYMENT`. Bu normal: HTTP bitti
 
 `id` değerini kopyala. Buna **ORDER_ID** de.
 
-### A2. HTTP tarafını doğrula (1–3 sn bekle)
+### A2. HTTP tarafını doğrula
 
-Aynı klasör: **Get order (saga sonucu)** birkaç kez. `CONFIRMED` olmalı.
+Aynı klasör: **Get order (saga sonucu)** 2–3 kez (arada ~1 sn).
 
-Sonra:
+- `CONFIRMED` → A3’e geç.
+- `AWAITING_PAYMENT` (senin ekranın) → saga ödeme adımında durdu. **Get’i tekrar tekrar basmak yetmez.** Aşağıdaki sırayı izle; her adımı bitirmeden sonrakine geçme.
 
-- **List payments (saga yan etkisi)** → bu order için `CAPTURED`
-- **List deliveries (saga yan etkisi)** → kurye adı (`Kurye-Ada` / `Can` / `Ece`)
+#### A2b. `AWAITING_PAYMENT` takıldıysa (şimdi senin durumun)
 
-Elle `POST /api/payments` atmana gerek yok; saga attı.
+Sipariş örneği: `84071403-aecc-473c-9d5f-92ae352536d0`. HTTP doğru; Kafka’daki payment tüketicisi komutu işlememiş.
+
+1. IntelliJ Run penceresinde **payment-service** seçili mi, kırmızı stop değil mi? `Started PaymentServiceApplication` satırı var mı?
+2. payment-service konsolunda bu sipariş id’sini ara:
+   - `PAYMENT CAPTURED` → ödeme oldu; sorun order-service (adım 6).
+   - `trusted packages` / `SerializationException` → eski deserialize hatası; adım 3 şart.
+   - Hiçbiri yok, log durgun → consumer takılı veya servis Kafka’ya bağlı değil; adım 3 + 5.
+3. Terminal:
+
+   ```bash
+   git pull
+   ```
+
+   IntelliJ: Maven **Reload All**. Sonra **Stop** ve tekrar **Nefis Yemek: tum servisler** (en azından order + payment + restaurant + delivery).
+4. payment-service ayağa kalkınca konsolda `PAYMENT command type=...ChargePaymentCommand` ve `PAYMENT CAPTURED` beklenir. `LinkedHashMap` / `String` / `null` görürsen hâlâ deserialize yanlış — bu mesajı not et.
+5. Kafka UI → **Consumers** → `payment-service`. `payment-commands` **lag** büyükse eski bozuk kayıt kuyruğu tıkıyor. Temizlemek (öğrenme ortamı; mesaj silinmez, group ileri sarılır):
+
+   ```bash
+   docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+     --bootstrap-server localhost:9092 \
+     --group payment-service \
+     --reset-offsets --to-latest --execute --topic payment-commands
+   ```
+
+   Sonra payment-service’i bir kez daha restart et.
+6. Postman: **Saga adımını tekrarla (takılı AWAITING_*)** → Send.  
+   Bu, `POST /api/orders/84071403-aecc-473c-9d5f-92ae352536d0/saga/replay` — REST ile payment açmaz; `ChargePaymentCommand`’ı yeniden yazar.
+7. 2 sn bekle → **Get order**.  
+   - `AWAITING_RESTAURANT` / `AWAITING_DELIVERY` / `CONFIRMED` → düzeldi; A3.  
+   - hâlâ `AWAITING_PAYMENT` → **List payments**. Bu order id ile `CAPTURED` satır var mı? Yoksa payment hâlâ komutu yemiyor (adım 1–4 log).
+8. Elle denemek istersen (öğrenme; saga bunu zaten yapmalı): **yapma** `POST /api/payments` bu sipariş için — orchestrator event bekler, REST satırı saga’yı ilerletmez. İlerletmek replay’dir.
 
 ### A3. Kafka UI — aynı ORDER_ID’yi altı topic’te izle
 

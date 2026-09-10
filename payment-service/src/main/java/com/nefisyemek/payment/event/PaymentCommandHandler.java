@@ -32,11 +32,12 @@ public class PaymentCommandHandler {
 
     @KafkaListener(topics = Topics.PAYMENT_COMMANDS, groupId = "${spring.kafka.consumer.group-id}")
     public void onCommand(Object command) {
+        log.info("PAYMENT command type={}", command == null ? "null" : command.getClass().getName());
         switch (command) {
             case ChargePaymentCommand charge -> charge(charge);
             case RefundPaymentCommand refund -> refund(refund);
-            default -> log.debug("PAYMENT ignored command type={}",
-                    command == null ? "null" : command.getClass().getSimpleName());
+            case null -> log.warn("PAYMENT command null — deserialize başarısız (ErrorHandlingDeserializer)");
+            default -> log.warn("PAYMENT ignored command type={}", command.getClass().getName());
         }
     }
 

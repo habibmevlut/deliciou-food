@@ -8,8 +8,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.AutoConfigureBefore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
 import org.springframework.boot.ssl.SslBundles;
 import org.springframework.context.annotation.Bean;
@@ -33,6 +35,7 @@ import java.util.Map;
  * Type header sayesinde aynı topic'te Charge ve Refund gibi farklı record'lar durabilir.
  */
 @AutoConfiguration
+@AutoConfigureBefore(KafkaAutoConfiguration.class)
 @EnableKafka
 @ConditionalOnClass(KafkaTemplate.class)
 @ConditionalOnProperty(name = "nefis.kafka.enabled", havingValue = "true", matchIfMissing = true)
@@ -99,7 +102,11 @@ public class KafkaJsonAutoConfiguration {
 
     static JsonDeserializer<Object> jsonDeserializer(ObjectMapper objectMapper) {
         JsonDeserializer<Object> deserializer = new JsonDeserializer<>(Object.class, objectMapper, true);
-        deserializer.addTrustedPackages(TRUSTED_PACKAGES);
+        deserializer.addTrustedPackages(
+                TRUSTED_PACKAGES,
+                "com.nefisyemek.contracts.command",
+                "com.nefisyemek.contracts.event"
+        );
         deserializer.setUseTypeHeaders(true);
         deserializer.setRemoveTypeHeaders(false);
         return deserializer;

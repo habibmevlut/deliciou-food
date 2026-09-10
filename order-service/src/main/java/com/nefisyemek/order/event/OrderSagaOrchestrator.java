@@ -93,12 +93,14 @@ public class OrderSagaOrchestrator {
     @KafkaListener(topics = Topics.PAYMENT_EVENTS, groupId = "${spring.kafka.consumer.group-id}")
     @Transactional
     public void onPaymentEvent(Object event) {
+        log.info("SAGA payment-events type={}", event == null ? "null" : event.getClass().getName());
         switch (event) {
             case PaymentChargedEvent charged -> onPaymentCharged(charged);
             case PaymentFailedEvent failed -> onPaymentFailed(failed);
             case PaymentRefundedEvent refunded ->
                     log.info("SAGA payment refunded order={} payment={}", refunded.orderId(), refunded.paymentId());
-            default -> log.debug("SAGA ignored payment event type={}", typeName(event));
+            case null -> log.warn("SAGA payment-events null — deserialize başarısız");
+            default -> log.warn("SAGA ignored payment event type={}", event.getClass().getName());
         }
     }
 
