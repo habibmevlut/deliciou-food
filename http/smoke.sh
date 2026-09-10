@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Gateway :8080 üzerinden Milestone 2 smoke (CRUD + saga).
+# Gateway :8080 üzerinden Milestone 2.5 smoke (CRUD + saga + outbox).
 # Servisler + api-gateway + Kafka ayakta olmalı.
 set -euo pipefail
 
@@ -76,6 +76,19 @@ SAGA_OK=$(curl -sS -X POST "${GW}/api/orders" \
 echo "$SAGA_OK"
 SID=$(echo "$SAGA_OK" | json_field "['id']")
 wait_order_status "${SID}" "CONFIRMED" >/dev/null
+
+echo "== outbox published (order-service) =="
+OUTBOX=$(curl -sf "${GW}/api/orders/outbox")
+echo "$OUTBOX" | python3 -c "
+import json,sys
+rows=json.load(sys.stdin)
+sid='''${SID}'''
+mine=[r for r in rows if r.get('messageKey')==sid]
+topics={r.get('topic') for r in mine}
+assert any(r.get('publishedAt') for r in mine), mine
+assert 'payment-commands' in topics, topics
+print('outbox rows for order:', len(mine), 'topics:', sorted(topics))
+"
 
 echo "== saga compensate (forceRestaurantReject) =="
 SAGA_KO=$(curl -sS -X POST "${GW}/api/orders" \

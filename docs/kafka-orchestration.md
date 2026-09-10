@@ -75,24 +75,24 @@ Dışarıdan hâlâ tek kapı: `POST /api/orders` (gateway `:8080`). Body’de `
         }
 ```
 
-`start` siparişi `AWAITING_PAYMENT` yapar ve kuyruğa **yap** atar. HTTP cevabı bu yüzden hemen `AWAITING_PAYMENT` döner; film arka planda devam eder.
+`start` siparişi `AWAITING_PAYMENT` yapar ve komutu **outbox**’a yazar (Kafka henüz yok). HTTP cevabı bu yüzden hemen `AWAITING_PAYMENT` döner; poller ~250 ms içinde `payment-commands`’a taşır.
 
-```52:64:order-service/src/main/java/com/nefisyemek/order/event/OrderSagaOrchestrator.java
+```52:63:order-service/src/main/java/com/nefisyemek/order/event/OrderSagaOrchestrator.java
     @Transactional
     public void start(Order order) {
         order.setStatus(OrderStatus.AWAITING_PAYMENT);
         order.setCancelReason(null);
         orders.save(order);
 
-        ChargePaymentCommand command = ChargePaymentCommand.of(
+        enqueue(Topics.PAYMENT_COMMANDS, order.getId(), ChargePaymentCommand.of(
                 order.getId(),
                 order.getCustomerId(),
                 order.getTotalAmount()
-        );
-        kafka.send(Topics.PAYMENT_COMMANDS, key(order.getId()), command);
+        ));
+        log.info("SAGA start order={} status=AWAITING_PAYMENT outbox -> {}", order.getId(), Topics.PAYMENT_COMMANDS);
 ```
 
-`kafka.send(topic, key, body)` = “bu siparişin kuyruğuna bu JSON’u koy.”
+`enqueue` = aynı Postgres transaction’ında `outbox_messages` satırı. Asıl `kafka.send` `OutboxPublisher`’da. Neden: [`kafka-outbox.md`](kafka-outbox.md).
 
 ---
 
@@ -143,7 +143,7 @@ Payment, restaurant’a “sen de onayla” **demez**. Sadece “parayı çektim
 
 Orchestrator `payment-events` dinler. “Charged” gelince status’u `AWAITING_RESTAURANT` yapar, restoran komutunu atar:
 
-```132:148:order-service/src/main/java/com/nefisyemek/order/event/OrderSagaOrchestrator.java
+```131:146:order-service/src/main/java/com/nefisyemek/order/event/OrderSagaOrchestrator.java
     private void onPaymentCharged(PaymentChargedEvent event) {
         orders.findById(event.orderId()).ifPresent(order -> {
             if (order.getStatus() != OrderStatus.AWAITING_PAYMENT) {
@@ -152,13 +152,12 @@ Orchestrator `payment-events` dinler. “Charged” gelince status’u `AWAITING
             }
             order.setStatus(OrderStatus.AWAITING_RESTAURANT);
             orders.save(order);
-            ReserveRestaurantCommand command = ReserveRestaurantCommand.of(
+            enqueue(Topics.RESTAURANT_COMMANDS, order.getId(), ReserveRestaurantCommand.of(
                     order.getId(),
                     order.getRestaurantId(),
                     order.isForceRestaurantReject(),
                     order.isForceRestaurantAccept()
-            );
-            kafka.send(Topics.RESTAURANT_COMMANDS, key(order.getId()), command);
+            ));
 ```
 
 `if (status != AWAITING_PAYMENT) return` — aynı event iki kez gelirse ikinciyi yemez (kaba idempotency). Asıl `processed_events` tablosu Milestone 3.
@@ -203,24 +202,30 @@ Kurye oyuncusu her zaman atar, “oldu” yazar:
 POST /api/orders  (status yok)
         │
         ▼
-order DB: AWAITING_PAYMENT
-kafka.send → payment-commands     ChargePaymentCommand
+order DB: AWAITING_PAYMENT  +  outbox ChargePaymentCommand
+        │  (poller ~250 ms)
+        ▼
+kafka → payment-commands
         │
         ▼
 payment DB: CAPTURED
-kafka.send → payment-events       PaymentChargedEvent
+kafka.send → payment-events       PaymentChargedEvent   (payment hâlâ doğrudan send)
         │
         ▼
-order DB: AWAITING_RESTAURANT
-kafka.send → restaurant-commands  ReserveRestaurantCommand
+order DB: AWAITING_RESTAURANT  +  outbox ReserveRestaurantCommand
+        │
+        ▼
+kafka → restaurant-commands
         │
         ▼
 restaurant: ACCEPT
 kafka.send → restaurant-events    RestaurantAcceptedEvent
         │
         ▼
-order DB: AWAITING_DELIVERY
-kafka.send → delivery-commands    AssignCourierCommand
+order DB: AWAITING_DELIVERY  +  outbox AssignCourierCommand
+        │
+        ▼
+kafka → delivery-commands
         │
         ▼
 delivery DB: kurye satırı
@@ -245,7 +250,7 @@ Restoran reddederse para çekilmişti. Geri almak = **iade komutu**.
     }
 ```
 
-`cancel(..., refundPayment=true)` siparişi `CANCELLED` yapar ve aynı `payment-commands` topic’ine bu kez `RefundPaymentCommand` koyar. Payment handler `refund` koluna düşer, status `REFUNDED`, `PaymentRefundedEvent` yazar.
+`cancel(..., refundPayment=true)` siparişi `CANCELLED` yapar ve `RefundPaymentCommand`’ı **outbox**’a koyar (poller `payment-commands`’a taşır). Payment handler `refund` koluna düşer, status `REFUNDED`, `PaymentRefundedEvent` yazar.
 
 Kurye adımına hiç gelinmez — `delivery-*` bu `orderId` ile boş kalır. Bu bug değil.
 
@@ -257,21 +262,27 @@ Kurye adımına hiç gelinmez — `delivery-*` bu `orderId` ile boş kalır. Bu 
 
 Komut kuyruğa yazıldı, oyuncu o an okuyamadı → sipariş `AWAITING_*`’te kalır. `POST /api/orders/{id}/saga/replay` **aynı adımın komutunu tekrar yazar**. REST ile payment açmaz.
 
-```71:76:order-service/src/main/java/com/nefisyemek/order/event/OrderSagaOrchestrator.java
+```70:75:order-service/src/main/java/com/nefisyemek/order/event/OrderSagaOrchestrator.java
     public void replayCurrentStep(Order order) {
         switch (order.getStatus()) {
             case AWAITING_PAYMENT -> {
-                kafka.send(Topics.PAYMENT_COMMANDS, key(order.getId()), ChargePaymentCommand.of(
+                enqueue(Topics.PAYMENT_COMMANDS, order.getId(), ChargePaymentCommand.of(
                         order.getId(), order.getCustomerId(), order.getTotalAmount()));
 ```
 
+Replay de outbox’tan geçer; poller’ı atlamaz.
+
 ---
 
-## 9) Bilerek eksik (sonraki milestone)
+## 9) Outbox (M2.5) ve hâlâ eksik olan
 
-DB `save` + `kafka.send` **atomik değil**. Process send’den önce ölürse komut kaybolur. Milestone 2.5 **Outbox**: önce `outbox` tablosuna yaz, sonra publisher Kafka’ya taşır.
+order-service komutları dual-write değil: `orders` + `outbox_messages` aynı COMMIT. Ayrıntı: [`kafka-outbox.md`](kafka-outbox.md).
 
-Notification saga’ya bağlı değil; SMS hâlâ ayrı REST.
+Hâlâ eksik:
+
+- Kafka ACK + `published_at` atomik değil → nadir çift mesaj. Milestone 3 **idempotent consumer**.
+- payment / restaurant / delivery hâlâ `kafka.send` (onların outbox’ı yok).
+- Notification saga’ya bağlı değil; SMS hâlâ ayrı REST.
 
 ---
 
@@ -280,7 +291,8 @@ Notification saga’ya bağlı değil; SMS hâlâ ayrı REST.
 | Dosya | Rol |
 | --- | --- |
 | `OrderService` | HTTP “Sipariş Ver” → `saga.start` |
-| `OrderSagaOrchestrator` | Yönetmen: komut atar, event dinler, status + compensate |
+| `OrderSagaOrchestrator` | Yönetmen: outbox’a komut yazar, event dinler, status + compensate |
+| `OutboxEnqueuer` / `OutboxPublisher` | Aynı TX’te satır; poller Kafka’ya taşır |
 | `PaymentCommandHandler` | `payment-commands` → DB → `payment-events` |
 | `RestaurantCommandHandler` | kabul / red event |
 | `DeliveryCommandHandler` | kurye atar, event |

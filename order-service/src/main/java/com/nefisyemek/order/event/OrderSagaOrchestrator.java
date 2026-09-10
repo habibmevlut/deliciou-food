@@ -21,7 +21,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,8 +31,8 @@ import java.util.UUID;
  * Orchestration-based saga: adımları burası sıralar.
  * Choreography'de her servis bir sonrakini tetikler; burada tek yönetmen order-service.
  *
- * Dual-write: DB kaydı + Kafka send atomik değil. Process send'den önce çökerse
- * komut kaybolur — Milestone 2.5 Outbox bunu çözer.
+ * Komutlar Kafka'ya doğrudan gitmez: aynı transaction içinde {@link OutboxEnqueuer}
+ * Postgres'e yazar. {@link OutboxPublisher} COMMIT'ten sonra kuyruğa taşır.
  */
 @Service
 @ConditionalOnProperty(name = "nefis.kafka.enabled", havingValue = "true", matchIfMissing = true)
@@ -42,11 +41,11 @@ public class OrderSagaOrchestrator {
     private static final Logger log = LoggerFactory.getLogger(OrderSagaOrchestrator.class);
 
     private final OrderRepository orders;
-    private final KafkaTemplate<String, Object> kafka;
+    private final OutboxEnqueuer outbox;
 
-    public OrderSagaOrchestrator(OrderRepository orders, KafkaTemplate<String, Object> kafka) {
+    public OrderSagaOrchestrator(OrderRepository orders, OutboxEnqueuer outbox) {
         this.orders = orders;
-        this.kafka = kafka;
+        this.outbox = outbox;
     }
 
     @Transactional
@@ -55,37 +54,37 @@ public class OrderSagaOrchestrator {
         order.setCancelReason(null);
         orders.save(order);
 
-        ChargePaymentCommand command = ChargePaymentCommand.of(
+        enqueue(Topics.PAYMENT_COMMANDS, order.getId(), ChargePaymentCommand.of(
                 order.getId(),
                 order.getCustomerId(),
                 order.getTotalAmount()
-        );
-        kafka.send(Topics.PAYMENT_COMMANDS, key(order.getId()), command);
-        log.info("SAGA start order={} status=AWAITING_PAYMENT -> {}", order.getId(), Topics.PAYMENT_COMMANDS);
+        ));
+        log.info("SAGA start order={} status=AWAITING_PAYMENT outbox -> {}", order.getId(), Topics.PAYMENT_COMMANDS);
     }
 
     /**
      * Takılı saga: komut Kafka'da kayboldu veya consumer o an okuyamadı.
-     * Status aynı kalır; yalnızca o adımın komutu yeniden yazılır (idempotent consumer varsayımı).
+     * Status aynı kalır; yalnızca o adımın komutu outbox'a yeniden yazılır (idempotent consumer varsayımı).
      */
+    @Transactional
     public void replayCurrentStep(Order order) {
         switch (order.getStatus()) {
             case AWAITING_PAYMENT -> {
-                kafka.send(Topics.PAYMENT_COMMANDS, key(order.getId()), ChargePaymentCommand.of(
+                enqueue(Topics.PAYMENT_COMMANDS, order.getId(), ChargePaymentCommand.of(
                         order.getId(), order.getCustomerId(), order.getTotalAmount()));
-                log.info("SAGA replay order={} -> {}", order.getId(), Topics.PAYMENT_COMMANDS);
+                log.info("SAGA replay order={} outbox -> {}", order.getId(), Topics.PAYMENT_COMMANDS);
             }
             case AWAITING_RESTAURANT -> {
-                kafka.send(Topics.RESTAURANT_COMMANDS, key(order.getId()), ReserveRestaurantCommand.of(
+                enqueue(Topics.RESTAURANT_COMMANDS, order.getId(), ReserveRestaurantCommand.of(
                         order.getId(),
                         order.getRestaurantId(),
                         order.isForceRestaurantReject(),
                         order.isForceRestaurantAccept()));
-                log.info("SAGA replay order={} -> {}", order.getId(), Topics.RESTAURANT_COMMANDS);
+                log.info("SAGA replay order={} outbox -> {}", order.getId(), Topics.RESTAURANT_COMMANDS);
             }
             case AWAITING_DELIVERY -> {
-                kafka.send(Topics.DELIVERY_COMMANDS, key(order.getId()), AssignCourierCommand.of(order.getId()));
-                log.info("SAGA replay order={} -> {}", order.getId(), Topics.DELIVERY_COMMANDS);
+                enqueue(Topics.DELIVERY_COMMANDS, order.getId(), AssignCourierCommand.of(order.getId()));
+                log.info("SAGA replay order={} outbox -> {}", order.getId(), Topics.DELIVERY_COMMANDS);
             }
             default -> throw new IllegalOrderStateException(
                     "Saga replay yalnızca AWAITING_* için. status=" + order.getStatus());
@@ -137,14 +136,13 @@ public class OrderSagaOrchestrator {
             }
             order.setStatus(OrderStatus.AWAITING_RESTAURANT);
             orders.save(order);
-            ReserveRestaurantCommand command = ReserveRestaurantCommand.of(
+            enqueue(Topics.RESTAURANT_COMMANDS, order.getId(), ReserveRestaurantCommand.of(
                     order.getId(),
                     order.getRestaurantId(),
                     order.isForceRestaurantReject(),
                     order.isForceRestaurantAccept()
-            );
-            kafka.send(Topics.RESTAURANT_COMMANDS, key(order.getId()), command);
-            log.info("SAGA payment charged order={} payment={} -> {}",
+            ));
+            log.info("SAGA payment charged order={} payment={} outbox -> {}",
                     order.getId(), event.paymentId(), Topics.RESTAURANT_COMMANDS);
         });
     }
@@ -161,8 +159,8 @@ public class OrderSagaOrchestrator {
             }
             order.setStatus(OrderStatus.AWAITING_DELIVERY);
             orders.save(order);
-            kafka.send(Topics.DELIVERY_COMMANDS, key(order.getId()), AssignCourierCommand.of(order.getId()));
-            log.info("SAGA restaurant accepted order={} -> {}", order.getId(), Topics.DELIVERY_COMMANDS);
+            enqueue(Topics.DELIVERY_COMMANDS, order.getId(), AssignCourierCommand.of(order.getId()));
+            log.info("SAGA restaurant accepted order={} outbox -> {}", order.getId(), Topics.DELIVERY_COMMANDS);
         });
     }
 
@@ -200,12 +198,16 @@ public class OrderSagaOrchestrator {
             order.setCancelReason(reason);
             orders.save(order);
             if (refundPayment) {
-                kafka.send(Topics.PAYMENT_COMMANDS, key(orderId), RefundPaymentCommand.of(orderId, reason));
-                log.warn("SAGA cancelled order={} reason={} -> RefundPaymentCommand", orderId, reason);
+                enqueue(Topics.PAYMENT_COMMANDS, orderId, RefundPaymentCommand.of(orderId, reason));
+                log.warn("SAGA cancelled order={} reason={} outbox -> RefundPaymentCommand", orderId, reason);
             } else {
                 log.warn("SAGA cancelled order={} reason={} (iade yok)", orderId, reason);
             }
         });
+    }
+
+    private void enqueue(String topic, UUID orderId, Object command) {
+        outbox.enqueue(topic, key(orderId), command);
     }
 
     private static String key(UUID orderId) {

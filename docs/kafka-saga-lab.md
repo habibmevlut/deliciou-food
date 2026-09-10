@@ -2,11 +2,12 @@
 
 Bu dosya Postman + Kafka UI ile **üç senaryoyu** sırayla denemen için. README özet tutar; burası adım adım laboratuvar.
 
-Kodda yönetmen / oyuncu / compensate: [`kafka-orchestration.md`](kafka-orchestration.md).
+Kodda yönetmen / oyuncu / compensate: [`kafka-orchestration.md`](kafka-orchestration.md).  
+Neden outbox (Postgres önce, Kafka sonra): [`kafka-outbox.md`](kafka-outbox.md).
 
 Kafka UI: [http://localhost:8090](http://localhost:8090)  
 Gateway (Postman): [http://localhost:8080](http://localhost:8080)  
-Koleksiyon: `http/Nefis-Yemek.postman_collection.json` → klasör **8. Saga — Sipariş Ver**
+Koleksiyon: `http/Nefis-Yemek.postman_collection.json` → klasör **8. Saga — Sipariş Ver** ve **9. Outbox**
 
 ---
 
@@ -17,6 +18,8 @@ Dış dünya yalnızca gateway’e konuşur. Kafka **servislerin kendi arasında
 ```
 Sen ──HTTP──► :8080 ──► order-service
                               │
+                              │  0. aynı TX: orders + outbox_messages
+                              │  poller ~250 ms sonra Kafka
                               │  1. ChargePaymentCommand
                               ▼
                      payment-commands          payment-service çeker, DB'ye CAPTURED yazar
@@ -281,6 +284,28 @@ Beş kez dene. Çoğu `CONFIRMED`, bazısı `RANDOM_REJECT` + `CANCELLED`. Kafka
 
 ---
 
+## Senaryo E — Outbox’ı görmek (M2.5)
+
+Amaç: komutun Kafka’dan **önce** Postgres’te durduğunu hissetmek.
+
+1. Klasör **8 → Sipariş Ver (mutlu yol)** → Send. `orderId` kopyala.
+2. **Hemen** klasör **9 → List outbox**. Aynı `messageKey` = sipariş id, `topic` = `payment-commands`. `publishedAt` henüz `null` olabilir (poller 250 ms).
+3. 1 sn bekle → **List outbox** tekrar (veya `unpublishedOnly=true`: boşalmalı). `publishedAt` dolu.
+4. Kafka UI → `payment-commands` → aynı key. Outbox satırı “kasa defteri”, topic “yola çıkan kamyon”.
+5. GET order `CONFIRMED` olunca aynı `orderId` için outbox’ta üç komut vardır: `payment-commands`, `restaurant-commands`, `delivery-commands`. Hepsi `publishedAt` dolu.
+
+IntelliJ order-service log:
+
+```
+SAGA start ... outbox -> payment-commands
+OUTBOX enqueue topic=payment-commands ...
+OUTBOX published ... topic=payment-commands
+```
+
+`SAGA start` var, `OUTBOX published` yoksa poller/Kafka; `published` var, Kafka UI boşsa Seek **Earliest**.
+
+---
+
 ## Tek bakışta “bu sipariş nerede?”
 
 Postman’dan ORDER_ID’yi kopyala. Kafka UI Topics’te her saga topic’ine gir, key ile süz.
@@ -310,12 +335,14 @@ HTTP status, orchestrator’ın Kafka event’lerinden türetilmiş özetidir. A
 | `8080` down | Gateway çalışmıyor; Postman’ın hepsi 8080 |
 | `AWAITING_PAYMENT` takılı, `payment-events` boş | Payment REST’i atlamadın. Orchestrator `payment-commands`’a yazdı; event henüz yok. Kafka UI’da **Topics → payment-commands** (Events değil), Seek **Oldest**, arama kutusunu temizle, Key = tam UUID. `Newest` + kısmi UUID araması boş gösterebilir. payment-service deserializer hatası yaşadıysa `git pull`, servisleri restart, sonra `POST /api/orders/{id}/saga/replay`. |
 | `PAYMENT ignored command type=...ConsumerRecord` | Listener `Object` parametresi payload değil tüm Kafka kaydı oluyor. `@Payload` + unwrap düzeltmesi. `git pull`, Maven Reload, 4 servisi restart, sonra **Saga adımını tekrarla**. |
+| `GET /api/orders/outbox` 404 veya tablo yok | order-service Flyway **V3** (`outbox_messages`). `git pull`, order-service restart. Path literal `/outbox`, UUID değil. |
 
 ---
 
 ## Bu lab’de bilinçli olarak yok
 
 - Notification Kafka dinlemiyor; SMS REST ile ayrı.
-- Outbox yok (M2.5): DB + Kafka send atomik değil.
+- payment / restaurant / delivery outbox’ı yok; yalnızca order-service komutları tablodan geçer.
+- Çift Kafka mesajı (ACK oldu, `published_at` yazılmadı) M3 idempotent consumer.
 - JWT yok; UI’da auth yok.
 - Prometheus/Grafana yok; Kafka UI metrik dashboard’u değil.

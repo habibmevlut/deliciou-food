@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-nefisyemek0001",
     "name": "Nefis Yemek",
-    "description": "Milestone 2 — tek kapı + Saga. Tüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. docker compose up -d (Postgres + Kafka + Kafka UI :8090), sonra IntelliJ: Nefis Yemek: tum servisler.\n2. CRUD için 1–7. Asıl ders: 8. Saga — Sipariş Ver.\n3. Create istekleri id'yi koleksiyon değişkenine yazar.\n4. Kafka lab: docs/kafka-saga-lab.md — UI http://localhost:8090\n5. Kodda orchestration: docs/kafka-orchestration.md\n\nYeniden import: Postman → Import → Replace (koleksiyon id sabit).\n\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
+    "description": "Milestone 2.5 — tek kapı + Saga + order-service Outbox. Tüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. docker compose up -d (Postgres + Kafka + Kafka UI :8090), sonra IntelliJ: Nefis Yemek: tum servisler.\n2. CRUD için 1–7. Asıl ders: 8. Saga — Sipariş Ver, sonra 9. Outbox.\n3. Create istekleri id'yi koleksiyon değişkenine yazar.\n4. Kafka lab: docs/kafka-saga-lab.md — UI http://localhost:8090\n5. Kodda orchestration: docs/kafka-orchestration.md — Outbox: docs/kafka-outbox.md\n\nYeniden import: Postman → Import → Replace (koleksiyon id sabit).\n\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -596,7 +596,7 @@
             "method": "POST",
             "header": [],
             "url": "{{gateway}}/api/orders/{{orderId}}/saga/replay",
-            "description": "REST ile payment oluşturmaz. AWAITING_PAYMENT ise ChargePaymentCommand'ı tekrar payment-commands'a yazar. payment-service ayakta olmalı."
+            "description": "REST ile payment oluşturmaz. AWAITING_PAYMENT ise ChargePaymentCommand'ı tekrar outbox'a yazar (poller Kafka'ya taşır). payment-service ayakta olmalı."
           }
         },
         {
@@ -652,6 +652,30 @@
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "9. Outbox",
+      "description": "order-service komutları Kafka'ya doğrudan gitmez. Aynı TX'te outbox_messages satırı; poller (~250 ms) yayınlar.\n\nGET /api/orders/outbox — son 50 (yeniler üstte).\n?unpublishedOnly=true — henüz Kafka'ya gitmemişler.\nLab Senaryo E: docs/kafka-saga-lab.md — neden: docs/kafka-outbox.md",
+      "item": [
+        {
+          "name": "List outbox",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/orders/outbox",
+            "description": "Sipariş Ver'den hemen sonra publishedAt null olabilir. 1 sn sonra dolu. messageKey = orderId. Mutlu yolda üç komut: payment / restaurant / delivery-commands."
+          }
+        },
+        {
+          "name": "List unpublished outbox",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/orders/outbox?unpublishedOnly=true",
+            "description": "Poller çalışıyorsa çoğu zaman boş. Dolu kalırsa order-service log'da OUTBOX publish failed ara."
+          }
         }
       ]
     },

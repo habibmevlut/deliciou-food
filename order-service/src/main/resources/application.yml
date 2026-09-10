@@ -33,6 +33,9 @@ spring:
 nefis:
   kafka:
     enabled: ${NEFIS_KAFKA_ENABLED:true}
+  outbox:
+    poll-ms: ${NEFIS_OUTBOX_POLL_MS:250}
+    batch-size: ${NEFIS_OUTBOX_BATCH_SIZE:50}
 
 management:
   endpoints:
