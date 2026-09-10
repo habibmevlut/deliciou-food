@@ -2,6 +2,8 @@
 
 Bu dosya Postman + Kafka UI ile **üç senaryoyu** sırayla denemen için. README özet tutar; burası adım adım laboratuvar.
 
+Kodda yönetmen / oyuncu / compensate: [`kafka-orchestration.md`](kafka-orchestration.md).
+
 Kafka UI: [http://localhost:8090](http://localhost:8090)  
 Gateway (Postman): [http://localhost:8080](http://localhost:8080)  
 Koleksiyon: `http/Nefis-Yemek.postman_collection.json` → klasör **8. Saga — Sipariş Ver**

@@ -85,7 +85,8 @@ Komut = "yap". Event = "oldu". Orchestrator event dinler, bir sonraki komutu yol
 
 ## Mutlu senaryo nasıl tetiklenir?
 
-Adım adım (üç senaryo + Kafka UI): [`docs/kafka-saga-lab.md`](docs/kafka-saga-lab.md)
+Adım adım (üç senaryo + Kafka UI): [`docs/kafka-saga-lab.md`](docs/kafka-saga-lab.md)  
+Kodda nasıl handle ediliyor: [`docs/kafka-orchestration.md`](docs/kafka-orchestration.md)
 
 Kısaca: `docker compose up -d` → IntelliJ tum servisler → Postman klasör **8** mutlu yol (`forceRestaurantAccept: true`) → 1–3 sn sonra GET order = `CONFIRMED`. `status: "PENDING"` = saga yok (CRUD).
 
@@ -108,7 +109,8 @@ Bayrak yoksa restoran **%20** `RANDOM_REJECT` eder (`nefis.restaurant.reject-pro
 
 Broker'ın kendisi bir web arayüzü sunmaz. Topic, mesaj ve consumer group görmek için compose'a **Kafbat Kafka UI** eklendi.
 
-**Adım adım senaryolar (Postman + Kafka UI, büyük pencere):** [`docs/kafka-saga-lab.md`](docs/kafka-saga-lab.md)
+**Adım adım senaryolar (Postman + Kafka UI):** [`docs/kafka-saga-lab.md`](docs/kafka-saga-lab.md)  
+**Kodda orchestration (komut / event / compensate):** [`docs/kafka-orchestration.md`](docs/kafka-orchestration.md)
 
 Kısaca: [http://localhost:8090](http://localhost:8090) — cluster `nefis-yemek`. Port **8090** (gateway **8080**). Bu Prometheus/Grafana değil (M4).
 
