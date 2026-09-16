@@ -17,6 +17,7 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @ConditionalOnProperty(name = "nefis.kafka.enabled", havingValue = "true", matchIfMissing = true)
@@ -25,26 +26,38 @@ public class PaymentCommandHandler {
     private static final Logger log = LoggerFactory.getLogger(PaymentCommandHandler.class);
 
     private final PaymentService payments;
+    private final IdempotentConsumer inbox;
     private final KafkaTemplate<String, Object> kafka;
 
-    public PaymentCommandHandler(PaymentService payments, KafkaTemplate<String, Object> kafka) {
+    public PaymentCommandHandler(
+            PaymentService payments,
+            IdempotentConsumer inbox,
+            KafkaTemplate<String, Object> kafka
+    ) {
         this.payments = payments;
+        this.inbox = inbox;
         this.kafka = kafka;
     }
 
     @KafkaListener(topics = Topics.PAYMENT_COMMANDS, groupId = "${spring.kafka.consumer.group-id}")
+    @Transactional
     public void onCommand(@Payload Object incoming) {
         Object command = KafkaPayloads.unwrap(incoming);
         log.info("PAYMENT command type={}", command == null ? "null" : command.getClass().getName());
         switch (command) {
-            case ChargePaymentCommand charge -> charge(charge);
-            case RefundPaymentCommand refund -> refund(refund);
+            case ChargePaymentCommand chargeCmd -> charge(chargeCmd);
+            case RefundPaymentCommand refundCmd -> refund(refundCmd);
             case null -> log.warn("PAYMENT command null — deserialize başarısız (ErrorHandlingDeserializer)");
             default -> log.warn("PAYMENT ignored command type={}", command.getClass().getName());
         }
     }
 
     private void charge(ChargePaymentCommand command) {
+        if (!inbox.claim(command.commandId(), "ChargePaymentCommand", command.orderId())) {
+            log.info("PAYMENT idempotent skip charge commandId={} order={}",
+                    command.commandId(), command.orderId());
+            return;
+        }
         Payment payment = payments.captureForSaga(command.orderId(), command.amount());
         if (payment.getStatus() == PaymentStatus.FAILED) {
             kafka.send(Topics.PAYMENT_EVENTS, command.orderId().toString(),
@@ -59,6 +72,11 @@ public class PaymentCommandHandler {
     }
 
     private void refund(RefundPaymentCommand command) {
+        if (!inbox.claim(command.commandId(), "RefundPaymentCommand", command.orderId())) {
+            log.info("PAYMENT idempotent skip refund commandId={} order={}",
+                    command.commandId(), command.orderId());
+            return;
+        }
         Payment payment = payments.refundForSaga(command.orderId());
         if (payment == null) {
             log.warn("PAYMENT REFUND skipped — kayıt yok order={}", command.orderId());

@@ -1,0 +1,13 @@
+package com.nefisyemek.order.domain;
+
+public enum OrderHistoryStep {
+    ORDER_CREATED,
+    SAGA_STARTED,
+    PAYMENT_CHARGED,
+    PAYMENT_FAILED,
+    PAYMENT_REFUNDED,
+    RESTAURANT_ACCEPTED,
+    RESTAURANT_REJECTED,
+    COURIER_ASSIGNED,
+    COURIER_FAILED
+}

@@ -274,15 +274,17 @@ Replay de outbox’tan geçer; poller’ı atlamaz.
 
 ---
 
-## 9) Outbox (M2.5) ve hâlâ eksik olan
+## 9) Outbox, idempotent consumer, CQRS
 
 order-service komutları dual-write değil: `orders` + `outbox_messages` aynı COMMIT. Ayrıntı: [`kafka-outbox.md`](kafka-outbox.md).
 
+Aynı komut iki kez Kafka'ya düşerse payment `processed_events` ile yutulur. Siparişin film şeridi `order_history_view`. Ayrıntı: [`cqrs-idempotency.md`](cqrs-idempotency.md).
+
 Hâlâ eksik:
 
-- Kafka ACK + `published_at` atomik değil → nadir çift mesaj. Milestone 3 **idempotent consumer**.
-- payment / restaurant / delivery hâlâ `kafka.send` (onların outbox’ı yok).
-- Notification saga’ya bağlı değil; SMS hâlâ ayrı REST.
+- payment / restaurant / delivery hâlâ `kafka.send` (onların outbox'ı yok).
+- restaurant / delivery idempotent tablo yok.
+- Notification saga'ya bağlı değil; SMS hâlâ ayrı REST.
 
 ---
 
@@ -293,6 +295,8 @@ Hâlâ eksik:
 | `OrderService` | HTTP “Sipariş Ver” → `saga.start` |
 | `OrderSagaOrchestrator` | Yönetmen: outbox’a komut yazar, event dinler, status + compensate |
 | `OutboxEnqueuer` / `OutboxPublisher` | Aynı TX’te satır; poller Kafka’ya taşır |
+| `IdempotentConsumer` | payment: aynı commandId ikinci kez işlenmez |
+| `OrderHistoryRecorder` | CQRS: `order_history_view` film şeridi |
 | `PaymentCommandHandler` | `payment-commands` → DB → `payment-events` |
 | `RestaurantCommandHandler` | kabul / red event |
 | `DeliveryCommandHandler` | kurye atar, event |

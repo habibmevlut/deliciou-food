@@ -11,6 +11,7 @@ import com.nefisyemek.contracts.event.PaymentFailedEvent;
 import com.nefisyemek.contracts.event.RestaurantAcceptedEvent;
 import com.nefisyemek.contracts.event.RestaurantRejectedEvent;
 import com.nefisyemek.order.domain.Order;
+import com.nefisyemek.order.domain.OrderHistoryStep;
 import com.nefisyemek.order.domain.OrderStatus;
 import com.nefisyemek.order.repository.OrderRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,11 +41,14 @@ class OrderSagaOrchestratorTest {
     @Mock
     private OutboxEnqueuer outbox;
 
+    @Mock
+    private OrderHistoryRecorder history;
+
     private OrderSagaOrchestrator saga;
 
     @BeforeEach
     void setUp() {
-        saga = new OrderSagaOrchestrator(orders, outbox);
+        saga = new OrderSagaOrchestrator(orders, outbox, history);
     }
 
     @Test
@@ -57,6 +61,8 @@ class OrderSagaOrchestratorTest {
         ArgumentCaptor<Object> payload = ArgumentCaptor.forClass(Object.class);
         verify(outbox).enqueue(eq(Topics.PAYMENT_COMMANDS), eq(order.getId().toString()), payload.capture());
         assertThat(payload.getValue()).isInstanceOf(ChargePaymentCommand.class);
+        verify(history).record(eq(order.getId()), eq(OrderHistoryStep.SAGA_STARTED), eq("AWAITING_PAYMENT"),
+                eq("saga-started:" + order.getId()));
     }
 
     @Test
@@ -135,6 +141,7 @@ class OrderSagaOrchestratorTest {
 
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CONFIRMED);
         verifyNoInteractions(outbox);
+        verifyNoInteractions(history);
     }
 
     @Test

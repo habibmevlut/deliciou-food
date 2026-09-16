@@ -14,6 +14,7 @@ import com.nefisyemek.contracts.event.RestaurantAcceptedEvent;
 import com.nefisyemek.contracts.event.RestaurantRejectedEvent;
 import com.nefisyemek.contracts.kafka.KafkaPayloads;
 import com.nefisyemek.order.domain.Order;
+import com.nefisyemek.order.domain.OrderHistoryStep;
 import com.nefisyemek.order.domain.OrderStatus;
 import com.nefisyemek.order.exception.IllegalOrderStateException;
 import com.nefisyemek.order.repository.OrderRepository;
@@ -29,10 +30,7 @@ import java.util.UUID;
 
 /**
  * Orchestration-based saga: adımları burası sıralar.
- * Choreography'de her servis bir sonrakini tetikler; burada tek yönetmen order-service.
- *
- * Komutlar Kafka'ya doğrudan gitmez: aynı transaction içinde {@link OutboxEnqueuer}
- * Postgres'e yazar. {@link OutboxPublisher} COMMIT'ten sonra kuyruğa taşır.
+ * Komutlar outbox'a gider. Her ilerleme {@link OrderHistoryRecorder} ile okuma modeline de yazılır.
  */
 @Service
 @ConditionalOnProperty(name = "nefis.kafka.enabled", havingValue = "true", matchIfMissing = true)
@@ -42,10 +40,16 @@ public class OrderSagaOrchestrator {
 
     private final OrderRepository orders;
     private final OutboxEnqueuer outbox;
+    private final OrderHistoryRecorder history;
 
-    public OrderSagaOrchestrator(OrderRepository orders, OutboxEnqueuer outbox) {
+    public OrderSagaOrchestrator(
+            OrderRepository orders,
+            OutboxEnqueuer outbox,
+            OrderHistoryRecorder history
+    ) {
         this.orders = orders;
         this.outbox = outbox;
+        this.history = history;
     }
 
     @Transactional
@@ -53,6 +57,8 @@ public class OrderSagaOrchestrator {
         order.setStatus(OrderStatus.AWAITING_PAYMENT);
         order.setCancelReason(null);
         orders.save(order);
+        history.record(order.getId(), OrderHistoryStep.SAGA_STARTED, "AWAITING_PAYMENT",
+                "saga-started:" + order.getId());
 
         enqueue(Topics.PAYMENT_COMMANDS, order.getId(), ChargePaymentCommand.of(
                 order.getId(),
@@ -64,7 +70,8 @@ public class OrderSagaOrchestrator {
 
     /**
      * Takılı saga: komut Kafka'da kayboldu veya consumer o an okuyamadı.
-     * Status aynı kalır; yalnızca o adımın komutu outbox'a yeniden yazılır (idempotent consumer varsayımı).
+     * Status aynı kalır; yalnızca o adımın komutu outbox'a yeniden yazılır (yeni commandId).
+     * Asıl kopya (aynı commandId) payment processed_events ile yutulur.
      */
     @Transactional
     public void replayCurrentStep(Order order) {
@@ -99,8 +106,7 @@ public class OrderSagaOrchestrator {
         switch (event) {
             case PaymentChargedEvent charged -> onPaymentCharged(charged);
             case PaymentFailedEvent failed -> onPaymentFailed(failed);
-            case PaymentRefundedEvent refunded ->
-                    log.info("SAGA payment refunded order={} payment={}", refunded.orderId(), refunded.paymentId());
+            case PaymentRefundedEvent refunded -> onPaymentRefunded(refunded);
             case null -> log.warn("SAGA payment-events null — deserialize başarısız");
             default -> log.warn("SAGA ignored payment event type={}", event.getClass().getName());
         }
@@ -136,6 +142,8 @@ public class OrderSagaOrchestrator {
             }
             order.setStatus(OrderStatus.AWAITING_RESTAURANT);
             orders.save(order);
+            history.record(order.getId(), OrderHistoryStep.PAYMENT_CHARGED,
+                    "paymentId=" + event.paymentId(), event.eventId());
             enqueue(Topics.RESTAURANT_COMMANDS, order.getId(), ReserveRestaurantCommand.of(
                     order.getId(),
                     order.getRestaurantId(),
@@ -148,7 +156,14 @@ public class OrderSagaOrchestrator {
     }
 
     private void onPaymentFailed(PaymentFailedEvent event) {
+        history.record(event.orderId(), OrderHistoryStep.PAYMENT_FAILED, event.reason(), event.eventId());
         cancel(event.orderId(), "PAYMENT_FAILED", false);
+    }
+
+    private void onPaymentRefunded(PaymentRefundedEvent event) {
+        history.record(event.orderId(), OrderHistoryStep.PAYMENT_REFUNDED,
+                event.reason(), event.eventId());
+        log.info("SAGA payment refunded order={} payment={}", event.orderId(), event.paymentId());
     }
 
     private void onRestaurantAccepted(RestaurantAcceptedEvent event) {
@@ -159,6 +174,8 @@ public class OrderSagaOrchestrator {
             }
             order.setStatus(OrderStatus.AWAITING_DELIVERY);
             orders.save(order);
+            history.record(order.getId(), OrderHistoryStep.RESTAURANT_ACCEPTED,
+                    "restaurantId=" + event.restaurantId(), event.eventId());
             enqueue(Topics.DELIVERY_COMMANDS, order.getId(), AssignCourierCommand.of(order.getId()));
             log.info("SAGA restaurant accepted order={} outbox -> {}", order.getId(), Topics.DELIVERY_COMMANDS);
         });
@@ -166,6 +183,7 @@ public class OrderSagaOrchestrator {
 
     private void onRestaurantRejected(RestaurantRejectedEvent event) {
         log.warn("SAGA COMPENSATE order={} reason={}", event.orderId(), event.reason());
+        history.record(event.orderId(), OrderHistoryStep.RESTAURANT_REJECTED, event.reason(), event.eventId());
         cancel(event.orderId(), event.reason() == null ? "RESTAURANT_REJECTED" : event.reason(), true);
     }
 
@@ -178,6 +196,7 @@ public class OrderSagaOrchestrator {
             order.setStatus(OrderStatus.CONFIRMED);
             order.setCancelReason(null);
             orders.save(order);
+            history.record(order.getId(), OrderHistoryStep.COURIER_ASSIGNED, event.courierName(), event.eventId());
             log.info("SAGA confirmed order={} delivery={} courier={}",
                     order.getId(), event.deliveryId(), event.courierName());
         });
@@ -185,6 +204,7 @@ public class OrderSagaOrchestrator {
 
     private void onCourierFailed(CourierAssignmentFailedEvent event) {
         log.warn("SAGA COMPENSATE order={} reason={}", event.orderId(), event.reason());
+        history.record(event.orderId(), OrderHistoryStep.COURIER_FAILED, event.reason(), event.eventId());
         cancel(event.orderId(), event.reason() == null ? "COURIER_ASSIGNMENT_FAILED" : event.reason(), true);
     }
 

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-nefisyemek0001",
     "name": "Nefis Yemek",
-    "description": "Milestone 2.5 — tek kapı + Saga + order-service Outbox. Tüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. docker compose up -d (Postgres + Kafka + Kafka UI :8090), sonra IntelliJ: Nefis Yemek: tum servisler.\n2. CRUD için 1–7. Asıl ders: 8. Saga — Sipariş Ver, sonra 9. Outbox.\n3. Create istekleri id'yi koleksiyon değişkenine yazar.\n4. Kafka lab: docs/kafka-saga-lab.md — UI http://localhost:8090\n5. Kodda orchestration: docs/kafka-orchestration.md — Outbox: docs/kafka-outbox.md\n\nYeniden import: Postman → Import → Replace (koleksiyon id sabit).\n\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
+    "description": "Milestone 3 — tek kapı + Saga + Outbox + idempotent consumer + CQRS history. Tüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. docker compose up -d (Postgres + Kafka + Kafka UI :8090), sonra IntelliJ: Nefis Yemek: tum servisler.\n2. CRUD için 1–7. Asıl ders: 8. Saga, 9. Outbox, 10. Idempotency / History.\n3. Create istekleri id'yi koleksiyon değişkenine yazar.\n4. Kafka lab: docs/kafka-saga-lab.md — UI http://localhost:8090\n5. Kod: docs/kafka-orchestration.md — Outbox: docs/kafka-outbox.md — M3: docs/cqrs-idempotency.md\n\nYeniden import: Postman → Import → Replace (koleksiyon id sabit).\n\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -675,6 +675,30 @@
             "header": [],
             "url": "{{gateway}}/api/orders/outbox?unpublishedOnly=true",
             "description": "Poller çalışıyorsa çoğu zaman boş. Dolu kalırsa order-service log'da OUTBOX publish failed ara."
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. Idempotency / History",
+      "description": "GET /api/orders/{id} = şu anki status (yazma modeli).\nGET /api/orders/{id}/history = neler oldu (CQRS okuma modeli).\nGET /api/payments/processed-events = payment'in yuttuğu commandId'ler (aynı kâğıt ikinci kez para çekmez).\nNeden: docs/cqrs-idempotency.md — Lab Senaryo F.",
+      "item": [
+        {
+          "name": "Get order history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/orders/{{orderId}}/history",
+            "description": "Mutlu yol: ORDER_CREATED, SAGA_STARTED, PAYMENT_CHARGED, RESTAURANT_ACCEPTED, COURIER_ASSIGNED. Get order hâlâ tek satır CONFIRMED."
+          }
+        },
+        {
+          "name": "List processed events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/api/payments/processed-events",
+            "description": "ChargePaymentCommand (ve red yolunda RefundPaymentCommand). eventId = commandId. Outbox aynı JSON'u iki kez yayınlarsa ikinci satır açılmaz, ikinci tahsilat olmaz."
           }
         }
       ]

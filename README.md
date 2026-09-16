@@ -4,7 +4,7 @@ Kurgusal bir yemek sipariş platformu. Amaç production'a çıkmak değil; mikro
 
 Milestone'lar **tek branch'te** birikir. README her zaman o ana kadar yapılanın tam halidir; görmek için branch değiştirmen gerekmez.
 
-Şu an **Milestone 2.5**: Kafka + orchestration-based Saga + order-service **Transactional Outbox**. Dış dünya hâlâ yalnızca **:8080** üzerinden konuşur.
+Şu an **Milestone 3**: Saga + Outbox + **idempotent consumer** (payment) + **CQRS read model** (order history). Dış dünya hâlâ yalnızca **:8080** üzerinden konuşur.
 
 ## Gateway nedir, burada hangisi kullanıldı?
 
@@ -29,17 +29,19 @@ Kullanılmayanlar (bilerek):
 
 Nasıl çalışıyor: `application.yml` içinde `Path=/api/orders/**` → `localhost:8081` (IDE) veya `http://order-service:8081` (Docker). **Prefix strip yok** — backend zaten `/api/orders` dinliyor. Health: `GET :8080/actuator/health` gateway'in kendisi; `include: gateway` ile route listesi de actuator'da.
 
-## Milestone 2.5'te ne var / ne yok
+## Milestone 3'te ne var / ne yok
 
 | Var | Yok (sonraki milestone) |
 | --- | --- |
 | 6 iş servisi + api-gateway, 6 Postgres, Flyway, CRUD | JWT, Resilience4j, Zipkin (M4) |
-| Spring Cloud Gateway (`:8080`) | Idempotent consumer tablosu (M3) |
-| Kafka KRaft (tek broker), 6 topic, Kafka UI `:8090` | payment/restaurant/delivery outbox |
+| Spring Cloud Gateway (`:8080`) | restaurant/delivery `processed_events` |
+| Kafka KRaft, 6 topic, Kafka UI `:8090` | payment/restaurant/delivery outbox |
 | `OrderSagaOrchestrator` + compensating iade | notification Kafka consumer |
-| order-service `outbox_messages` + polling publisher | CQRS `order_history_view` (M3) |
+| order-service `outbox_messages` + polling publisher | Testcontainers (M5) |
+| payment-service `processed_events` (idempotent consumer) | |
+| order-service `order_history_view` (CQRS okuma modeli) | |
 
-## Mimari (M2.5)
+## Mimari (M3)
 
 ```
                     ┌─────────────┐
@@ -55,10 +57,12 @@ Nasıl çalışıyor: `application.yml` içinde `Path=/api/orders/**` → `local
                     OrderSagaOrchestrator
                              │
                     outbox_messages (aynı TX)
+                    order_history_view (film şeridi)
                              │ poller ~250 ms
                           Kafka :9092 (KRaft)
                                │
                           Kafka UI :8090
+                          payment processed_events
 ```
 
 ## Neden Saga? Neden 2PC değil?
@@ -71,7 +75,9 @@ Choreography (her servis bir sonrakini tetikler) M2'de yok; tek yönetmen okumay
 
 **Dual-write (M2.5 çözümü, yalnızca order-service):** orchestrator `orders` ile **aynı** Postgres transaction’ında `outbox_messages` satırı atar. `OutboxPublisher` COMMIT’ten sonra Kafka’ya taşır. Process send’den önce ölürse komut tabloda kalır. Payment/restaurant/delivery hâlâ doğrudan `kafka.send`. Ayrıntı: [`docs/kafka-outbox.md`](docs/kafka-outbox.md).
 
-Kafka ACK olup `published_at` yazılmadan ölünürse aynı komut bir daha gider — bunu **Milestone 3** idempotent consumer kapatır.
+Kafka ACK olup `published_at` yazılmadan ölünürse aynı komut bir daha gider. **Milestone 3** bunu payment tarafında kapatır: `processed_events` aynı `commandId`'yi ikinci kez yemez. Ayrıntı: [`docs/cqrs-idempotency.md`](docs/cqrs-idempotency.md).
+
+**CQRS (order):** `GET /api/orders/{id}` yazma modeli (şu anki status). `GET /api/orders/{id}/history` okuma modeli (neler oldu). İki tablo, aynı servis.
 
 ## Kafka topic listesi
 
@@ -90,9 +96,10 @@ Komut = "yap". Event = "oldu". Orchestrator event dinler, bir sonraki komutu yol
 
 ## Mutlu senaryo nasıl tetiklenir?
 
-Adım adım (üç senaryo + Kafka UI + outbox): [`docs/kafka-saga-lab.md`](docs/kafka-saga-lab.md)  
+Adım adım (üç senaryo + Kafka UI + outbox + history): [`docs/kafka-saga-lab.md`](docs/kafka-saga-lab.md)  
 Kodda nasıl handle ediliyor: [`docs/kafka-orchestration.md`](docs/kafka-orchestration.md)  
-Neden outbox: [`docs/kafka-outbox.md`](docs/kafka-outbox.md)
+Neden outbox: [`docs/kafka-outbox.md`](docs/kafka-outbox.md)  
+Neden processed_events / history: [`docs/cqrs-idempotency.md`](docs/cqrs-idempotency.md)
 
 Kısaca: `docker compose up -d` → IntelliJ tum servisler → Postman klasör **8** mutlu yol (`forceRestaurantAccept: true`) → 1–3 sn sonra GET order = `CONFIRMED`. `status: "PENDING"` = saga yok (CRUD).
 
@@ -117,7 +124,8 @@ Broker'ın kendisi bir web arayüzü sunmaz. Topic, mesaj ve consumer group gör
 
 **Adım adım senaryolar (Postman + Kafka UI):** [`docs/kafka-saga-lab.md`](docs/kafka-saga-lab.md)  
 **Kodda orchestration (komut / event / compensate):** [`docs/kafka-orchestration.md`](docs/kafka-orchestration.md)  
-**Outbox (önce Postgres, sonra Kafka):** [`docs/kafka-outbox.md`](docs/kafka-outbox.md)
+**Outbox (önce Postgres, sonra Kafka):** [`docs/kafka-outbox.md`](docs/kafka-outbox.md)  
+**Idempotent consumer + CQRS history:** [`docs/cqrs-idempotency.md`](docs/cqrs-idempotency.md)
 
 Kısaca: [http://localhost:8090](http://localhost:8090) — cluster `nefis-yemek`. Port **8090** (gateway **8080**). Bu Prometheus/Grafana değil (M4).
 
@@ -163,6 +171,8 @@ curl -sS -X POST http://localhost:8080/api/orders \
   -d '{"customerId":"<CUSTOMER_ID>","restaurantId":"<RESTAURANT_ID>","totalAmount":149.90,"forceRestaurantAccept":true}'
 
 curl -sS http://localhost:8080/api/orders/outbox
+curl -sS http://localhost:8080/api/orders/<ORDER_ID>/history
+curl -sS http://localhost:8080/api/payments/processed-events
 ```
 
 notification-service konsola `[MOCK SMS] to=...` yazar; gerçek SMS yok. M2'de saga SMS atmaz.
@@ -281,7 +291,7 @@ Konsolda `Started ApiGatewayApplication` ve `*ServiceApplication` satırları g�
 | `localhost:8090` açılmıyor | `docker compose ps` — `nefis-kafka-ui` UP mi? İlk pull uzun sürebilir. Port 8090 doluysa değiştir |
 | `Port 8081 was already in use` | `docker compose --profile apps stop` |
 | Run config: *module not specified* | Maven Reload |
-| Flyway / `Schema-validation: missing table` | Order URL `localhost:5436/orderdb`. V2 `cancel_reason`, V3 `outbox_messages`. `git pull` + order-service restart |
+| Flyway / `Schema-validation: missing table` | Order URL `localhost:5436/orderdb`. V2 `cancel_reason`, V3 `outbox_messages`, V4 `order_history_view`. Payment V2 `processed_events`. `git pull` + ilgili servisi restart |
 | SDK is not defined | Project Structure → SDK 21, Maven Reload |
 | restaurant-service `No default constructor` / `RestaurantDecisionPolicy` | İki kurucu varken Spring `@Autowired` ister. `git pull` sonrası Maven Reload ve restaurant-service restart |
 | payment-service `trusted packages` / `SerializationException` döngüsü | JsonDeserializer `com.nefisyemek.contracts` alt paketleri (`command`, `event`) kapsamaz. Kod `com.nefisyemek.contracts.*` kullanır. `git pull`, Maven Reload, order/payment/restaurant/delivery'yi restart. Kafka'yı silme — offset 0'daki mesaj geçerlidir. |
@@ -293,7 +303,7 @@ Koleksiyon: **`http/Nefis-Yemek.postman_collection.json`**
 1. **Import → File** → bu JSON
 2. Tekrar importte **Replace** (koleksiyon id sabit)
 3. Hepsi `{{gateway}}` = `http://localhost:8080`
-4. CRUD klasörleri (1–7) + **8. Saga — Sipariş Ver** + **9. Outbox**
+4. CRUD klasörleri (1–7) + **8. Saga** + **9. Outbox** + **10. Idempotency / History**
 
 **8081–8086'ya istek atma.**
 
@@ -315,14 +325,14 @@ nefis-contracts    Kafka komut/event record + JSON serileştirme
 .../service        iş kuralları, transaction sınırı
 .../repository     Spring Data JPA
 .../domain         entity + enum
-.../event          Kafka listener / OrderSagaOrchestrator / outbox enqueue+publisher
+.../event          Kafka listener / saga / outbox / history recorder / idempotent consumer
 .../exception      404 / 400 ProblemDetail
 ```
 
-Flyway: `src/main/resources/db/migration/V1__*.sql` (+ order `V2__order_saga_columns.sql`, `V3__outbox_messages.sql`).
+Flyway: `src/main/resources/db/migration/V1__*.sql` (+ order `V2` saga, `V3` outbox, `V4` history; payment `V2` processed_events).
 
 Hibernate `ddl-auto: validate` — şemayı JPA üretmez, Flyway üretir.
 
 ## Sonraki adım
 
-Milestone 3: Idempotent Consumer + CQRS Read Model (payment `processed_events`, order `order_history_view`).
+Milestone 4: Resilience, Security, Observability (Resilience4j, JWT, Actuator, Prometheus, Grafana, Zipkin).

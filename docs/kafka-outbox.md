@@ -119,6 +119,6 @@ Kafka UI hâlâ asıl kuyruk. Outbox “yola çıkmadan önceki kasa defteri”.
 
 ## 6) Bilerek kalan delik
 
-Kafka ACK geldi, `published_at` COMMIT edilmeden process öldü → poller aynı satırı **bir daha** gönderir. Çift `ChargePaymentCommand` mümkün. Bunu kapatan şey outbox değil; **idempotent consumer** (Milestone 3, `processed_events`).
+Kafka ACK geldi, `published_at` COMMIT edilmeden process öldü → poller aynı satırı **bir daha** gönderir. Çift `ChargePaymentCommand` (aynı `commandId`) mümkün. Bunu **payment-service `processed_events`** kapatır: ikinci kopya tahsilat yapmaz, event atmaz. [`cqrs-idempotency.md`](cqrs-idempotency.md).
 
 Payment/restaurant/delivery dual-write’ı duruyor: onlar hâlâ DB + `kafka.send`.

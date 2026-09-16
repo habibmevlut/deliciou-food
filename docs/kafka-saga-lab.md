@@ -3,11 +3,12 @@
 Bu dosya Postman + Kafka UI ile **üç senaryoyu** sırayla denemen için. README özet tutar; burası adım adım laboratuvar.
 
 Kodda yönetmen / oyuncu / compensate: [`kafka-orchestration.md`](kafka-orchestration.md).  
-Neden outbox (Postgres önce, Kafka sonra): [`kafka-outbox.md`](kafka-outbox.md).
+Neden outbox (Postgres önce, Kafka sonra): [`kafka-outbox.md`](kafka-outbox.md).  
+Neden processed_events / history: [`cqrs-idempotency.md`](cqrs-idempotency.md).
 
 Kafka UI: [http://localhost:8090](http://localhost:8090)  
 Gateway (Postman): [http://localhost:8080](http://localhost:8080)  
-Koleksiyon: `http/Nefis-Yemek.postman_collection.json` → klasör **8. Saga — Sipariş Ver** ve **9. Outbox**
+Koleksiyon: `http/Nefis-Yemek.postman_collection.json` → klasör **8. Saga**, **9. Outbox**, **10. Idempotency / History**
 
 ---
 
@@ -306,6 +307,19 @@ OUTBOX published ... topic=payment-commands
 
 ---
 
+## Senaryo F — History + processed_events (M3)
+
+Amaç: “şu anki status” ile “neler oldu”nun ayrı tablolar olduğunu görmek; payment’in aynı commandId’yi deftere yazdığını görmek.
+
+1. Klasör 8 → mutlu yol, Get order = `CONFIRMED`.
+2. Klasör **10 → Get order history**. Sıra: `ORDER_CREATED`, `SAGA_STARTED`, `PAYMENT_CHARGED`, `RESTAURANT_ACCEPTED`, `COURIER_ASSIGNED`.
+3. **List processed events**. `eventType=ChargePaymentCommand`, `orderId` senin sipariş. Bu, outbox’ın ikinci kopyasını yutacak defter.
+4. Restoran red siparişinde history’de `RESTAURANT_REJECTED` + `PAYMENT_REFUNDED`; processed-events’te iki satır (charge + refund).
+
+GET order = tek satır (yazma). GET history = film (okuma). Ayrıntı: [`cqrs-idempotency.md`](cqrs-idempotency.md).
+
+---
+
 ## Tek bakışta “bu sipariş nerede?”
 
 Postman’dan ORDER_ID’yi kopyala. Kafka UI Topics’te her saga topic’ine gir, key ile süz.
@@ -336,6 +350,8 @@ HTTP status, orchestrator’ın Kafka event’lerinden türetilmiş özetidir. A
 | `AWAITING_PAYMENT` takılı, `payment-events` boş | Payment REST’i atlamadın. Orchestrator `payment-commands`’a yazdı; event henüz yok. Kafka UI’da **Topics → payment-commands** (Events değil), Seek **Oldest**, arama kutusunu temizle, Key = tam UUID. `Newest` + kısmi UUID araması boş gösterebilir. payment-service deserializer hatası yaşadıysa `git pull`, servisleri restart, sonra `POST /api/orders/{id}/saga/replay`. |
 | `PAYMENT ignored command type=...ConsumerRecord` | Listener `Object` parametresi payload değil tüm Kafka kaydı oluyor. `@Payload` + unwrap düzeltmesi. `git pull`, Maven Reload, 4 servisi restart, sonra **Saga adımını tekrarla**. |
 | `GET /api/orders/outbox` 404 veya tablo yok | order-service Flyway **V3** (`outbox_messages`). `git pull`, order-service restart. Path literal `/outbox`, UUID değil. |
+| `GET /api/orders/{id}/history` 404 tablo | Flyway **V4** `order_history_view`. order-service restart. |
+| `GET /api/payments/processed-events` 404 tablo | payment-service Flyway **V2**. payment-service restart. |
 
 ---
 
@@ -343,6 +359,6 @@ HTTP status, orchestrator’ın Kafka event’lerinden türetilmiş özetidir. A
 
 - Notification Kafka dinlemiyor; SMS REST ile ayrı.
 - payment / restaurant / delivery outbox’ı yok; yalnızca order-service komutları tablodan geçer.
-- Çift Kafka mesajı (ACK oldu, `published_at` yazılmadı) M3 idempotent consumer.
+- restaurant / delivery `processed_events` yok; yalnızca payment.
 - JWT yok; UI’da auth yok.
 - Prometheus/Grafana yok; Kafka UI metrik dashboard’u değil.

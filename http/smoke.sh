@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Gateway :8080 üzerinden Milestone 2.5 smoke (CRUD + saga + outbox).
+# Gateway :8080 üzerinden Milestone 3 smoke (CRUD + saga + outbox + history).
 # Servisler + api-gateway + Kafka ayakta olmalı.
 set -euo pipefail
 
@@ -88,6 +88,28 @@ topics={r.get('topic') for r in mine}
 assert any(r.get('publishedAt') for r in mine), mine
 assert 'payment-commands' in topics, topics
 print('outbox rows for order:', len(mine), 'topics:', sorted(topics))
+"
+
+echo "== order history (CQRS) =="
+HIST=$(curl -sf "${GW}/api/orders/${SID}/history")
+echo "$HIST" | python3 -c "
+import json,sys
+rows=json.load(sys.stdin)
+steps=[r.get('step') for r in rows]
+assert 'ORDER_CREATED' in steps and 'SAGA_STARTED' in steps, steps
+assert 'PAYMENT_CHARGED' in steps and 'COURIER_ASSIGNED' in steps, steps
+print('history steps:', steps)
+"
+
+echo "== processed events (payment) =="
+PE=$(curl -sf "${GW}/api/payments/processed-events")
+echo "$PE" | python3 -c "
+import json,sys
+rows=json.load(sys.stdin)
+sid='''${SID}'''
+mine=[r for r in rows if r.get('orderId')==sid]
+assert any(r.get('eventType')=='ChargePaymentCommand' for r in mine), mine
+print('processed charge rows:', len(mine))
 "
 
 echo "== saga compensate (forceRestaurantReject) =="

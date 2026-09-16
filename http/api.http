@@ -73,6 +73,12 @@ GET http://localhost:8080/api/orders/outbox
 ### Outbox — henüz yayınlanmamış
 GET http://localhost:8080/api/orders/outbox?unpublishedOnly=true
 
+### CQRS — sipariş film şeridi
+GET http://localhost:8080/api/orders/{{sagaHappy.response.body.id}}/history
+
+### Idempotent consumer — işlenmiş komut id'leri
+GET http://localhost:8080/api/payments/processed-events
+
 ### Saga — Sipariş Ver (restoran red / compensate)
 # @name sagaReject
 POST http://localhost:8080/api/orders

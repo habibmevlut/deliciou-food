@@ -58,8 +58,8 @@ public class PaymentService {
     }
 
     /**
-     * Saga tahsilatı. Aynı order için tekrar gelen komut yeni satır açmaz (M3 processed_events değil;
-     * burada orderId yeter — öğrenme için kaba idempotency).
+     * Saga tahsilatı. Aynı order için tekrar gelen (yeni commandId'li replay) komut yeni satır açmaz.
+     * Aynı commandId'nin ikinci kopyası {@link com.nefisyemek.payment.event.IdempotentConsumer}'da kesilir.
      */
     @Transactional
     public Payment captureForSaga(UUID orderId, BigDecimal amount) {

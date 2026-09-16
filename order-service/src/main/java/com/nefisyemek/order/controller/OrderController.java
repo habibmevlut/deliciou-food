@@ -1,6 +1,7 @@
 package com.nefisyemek.order.controller;
 
 import com.nefisyemek.order.controller.dto.CreateOrderRequest;
+import com.nefisyemek.order.controller.dto.OrderHistoryResponse;
 import com.nefisyemek.order.controller.dto.OrderResponse;
 import com.nefisyemek.order.controller.dto.UpdateOrderRequest;
 import com.nefisyemek.order.service.OrderService;
@@ -48,6 +49,11 @@ public class OrderController {
     @GetMapping("/{id}")
     public OrderResponse findById(@PathVariable UUID id) {
         return orderService.findById(id);
+    }
+
+    @GetMapping("/{id}/history")
+    public List<OrderHistoryResponse> history(@PathVariable UUID id) {
+        return orderService.findHistory(id);
     }
 
     @PostMapping("/{id}/saga/replay")
