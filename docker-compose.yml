@@ -1,7 +1,7 @@
-# Nefis Yemek — Milestone 2
+# Nefis Yemek — Milestone 4
 #
 # Database per Service: her iş yeteneğinin kendi PostgreSQL instance'ı var.
-# Dış trafik yalnızca api-gateway :8080 üzerinden girer.
+# Dış trafik yalnızca api-gateway :8080 üzerinden girer (JWT kapıda).
 # Kafka KRaft (Zookeeper yok): IntelliJ localhost:9092, container içi kafka:29092.
 #
 # Host portlar:
@@ -14,9 +14,12 @@
 #   notification-service 8086   notification-db   5439
 #   kafka               9092
 #   kafka-ui            8090    http://localhost:8090
+#   prometheus          9090    http://localhost:9090
+#   grafana             3000    http://localhost:3000  admin/admin
+#   zipkin              9411    http://localhost:9411
 #
 # 5433 kullanılmıyor (socialflow vs.).
-# `docker compose up` → Postgres + Kafka + Kafka UI (IntelliJ için doğru).
+# `docker compose up` → Postgres + Kafka + Kafka UI + Prometheus + Grafana + Zipkin.
 # Tam stack: `docker compose --profile apps up --build`
 
 name: nefis-yemek
@@ -157,7 +160,7 @@ services:
       start_period: 20s
     restart: unless-stopped
 
-  # Topic / mesaj / consumer group tarayıcısı. Prometheus/Grafana değil (o M4).
+  # Topic / mesaj / consumer group tarayıcısı.
   # Gateway :8080 dolu olduğu için UI host portu 8090.
   kafka-ui:
     image: ghcr.io/kafbat/kafka-ui:v1.3.0
@@ -172,6 +175,42 @@ services:
       kafka: { condition: service_healthy }
     restart: unless-stopped
 
+  zipkin:
+    image: openzipkin/zipkin:3.4.4
+    container_name: nefis-zipkin
+    ports:
+      - "9411:9411"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: nefis-prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: nefis-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_DEFAULT_THEME: light
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
   order-service:
     profiles: ["apps"]
     build: { context: ., dockerfile: Dockerfile, args: { MODULE: order-service } }
@@ -184,6 +223,7 @@ services:
       SPRING_DATASOURCE_USERNAME: order
       SPRING_DATASOURCE_PASSWORD: order
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
     depends_on:
       order-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
@@ -207,6 +247,7 @@ services:
       SPRING_DATASOURCE_USERNAME: payment
       SPRING_DATASOURCE_PASSWORD: payment
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
     depends_on:
       payment-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
@@ -230,6 +271,7 @@ services:
       SPRING_DATASOURCE_USERNAME: restaurant
       SPRING_DATASOURCE_PASSWORD: restaurant
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
     depends_on:
       restaurant-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
@@ -252,6 +294,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://customer-db:5432/customerdb
       SPRING_DATASOURCE_USERNAME: customer
       SPRING_DATASOURCE_PASSWORD: customer
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+      NEFIS_JWT_SECRET: "nefis-yemek-dev-jwt-secret-do-not-use-in-prod!"
     depends_on:
       customer-db: { condition: service_healthy }
     healthcheck:
@@ -274,6 +318,7 @@ services:
       SPRING_DATASOURCE_USERNAME: delivery
       SPRING_DATASOURCE_PASSWORD: delivery
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
     depends_on:
       delivery-db: { condition: service_healthy }
       kafka: { condition: service_healthy }
@@ -296,6 +341,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notificationdb
       SPRING_DATASOURCE_USERNAME: notification
       SPRING_DATASOURCE_PASSWORD: notification
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
     depends_on:
       notification-db: { condition: service_healthy }
     healthcheck:
@@ -320,6 +366,8 @@ services:
       CUSTOMER_SERVICE_URI: http://customer-service:8084
       DELIVERY_SERVICE_URI: http://delivery-service:8085
       NOTIFICATION_SERVICE_URI: http://notification-service:8086
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+      NEFIS_JWT_SECRET: "nefis-yemek-dev-jwt-secret-do-not-use-in-prod!"
     depends_on:
       order-service: { condition: service_healthy }
       payment-service: { condition: service_healthy }

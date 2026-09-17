@@ -1,9 +1,30 @@
-### Gateway health
+### Gateway health (JWT yok)
 GET http://localhost:8080/actuator/health
+
+### Customer — oluştur (JWT yok)
+# @name createCustomer
+POST http://localhost:8080/api/customers
+Content-Type: application/json
+
+{
+  "fullName": "Ali Veli",
+  "email": "ali@example.com",
+  "phone": "5551112233"
+}
+
+### Login — bilet al
+# @name login
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "ali@example.com"
+}
 
 ### Restaurant — oluştur
 # @name createRestaurant
 POST http://localhost:8080/api/restaurants
+Authorization: Bearer {{login.response.body.accessToken}}
 Content-Type: application/json
 
 {
@@ -15,20 +36,11 @@ Content-Type: application/json
 
 ### Restaurant — liste
 GET http://localhost:8080/api/restaurants
-
-### Customer — oluştur
-# @name createCustomer
-POST http://localhost:8080/api/customers
-Content-Type: application/json
-
-{
-  "fullName": "Ali Veli",
-  "email": "ali@example.com",
-  "phone": "5551112233"
-}
+Authorization: Bearer {{login.response.body.accessToken}}
 
 ### Customer — adres ekle
 POST http://localhost:8080/api/customers/{{createCustomer.response.body.id}}/addresses
+Authorization: Bearer {{login.response.body.accessToken}}
 Content-Type: application/json
 
 {
@@ -40,6 +52,7 @@ Content-Type: application/json
 ### Order — CRUD (saga yok)
 # @name createOrder
 POST http://localhost:8080/api/orders
+Authorization: Bearer {{login.response.body.accessToken}}
 Content-Type: application/json
 
 {
@@ -52,6 +65,7 @@ Content-Type: application/json
 ### Saga — Sipariş Ver (mutlu yol)
 # @name sagaHappy
 POST http://localhost:8080/api/orders
+Authorization: Bearer {{login.response.body.accessToken}}
 Content-Type: application/json
 
 {
@@ -63,25 +77,32 @@ Content-Type: application/json
 
 ### Saga — sipariş durumu (1-3 sn sonra CONFIRMED)
 GET http://localhost:8080/api/orders/{{sagaHappy.response.body.id}}
+Authorization: Bearer {{login.response.body.accessToken}}
 
 ### Saga — takılı AWAITING_* ise komutu tekrar yaz (outbox)
 POST http://localhost:8080/api/orders/{{sagaHappy.response.body.id}}/saga/replay
+Authorization: Bearer {{login.response.body.accessToken}}
 
 ### Outbox — son komutlar (Kafka'dan önce Postgres)
 GET http://localhost:8080/api/orders/outbox
+Authorization: Bearer {{login.response.body.accessToken}}
 
 ### Outbox — henüz yayınlanmamış
 GET http://localhost:8080/api/orders/outbox?unpublishedOnly=true
+Authorization: Bearer {{login.response.body.accessToken}}
 
 ### CQRS — sipariş film şeridi
 GET http://localhost:8080/api/orders/{{sagaHappy.response.body.id}}/history
+Authorization: Bearer {{login.response.body.accessToken}}
 
 ### Idempotent consumer — işlenmiş komut id'leri
 GET http://localhost:8080/api/payments/processed-events
+Authorization: Bearer {{login.response.body.accessToken}}
 
 ### Saga — Sipariş Ver (restoran red / compensate)
 # @name sagaReject
 POST http://localhost:8080/api/orders
+Authorization: Bearer {{login.response.body.accessToken}}
 Content-Type: application/json
 
 {
@@ -93,9 +114,11 @@ Content-Type: application/json
 
 ### Saga — red sonucu (CANCELLED + cancelReason)
 GET http://localhost:8080/api/orders/{{sagaReject.response.body.id}}
+Authorization: Bearer {{login.response.body.accessToken}}
 
 ### Payment — oluştur
 POST http://localhost:8080/api/payments
+Authorization: Bearer {{login.response.body.accessToken}}
 Content-Type: application/json
 
 {
@@ -105,6 +128,7 @@ Content-Type: application/json
 
 ### Delivery — kurye ata
 POST http://localhost:8080/api/deliveries
+Authorization: Bearer {{login.response.body.accessToken}}
 Content-Type: application/json
 
 {
@@ -114,6 +138,7 @@ Content-Type: application/json
 
 ### Notification — mock SMS
 POST http://localhost:8080/api/notifications
+Authorization: Bearer {{login.response.body.accessToken}}
 Content-Type: application/json
 
 {
@@ -124,3 +149,7 @@ Content-Type: application/json
 
 ### Hata — 404
 GET http://localhost:8080/api/orders/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{login.response.body.accessToken}}
+
+### Prometheus (kapı, JWT yok)
+GET http://localhost:8080/actuator/prometheus

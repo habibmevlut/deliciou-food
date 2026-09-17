@@ -5,40 +5,120 @@ spring:
   application:
     name: api-gateway
   cloud:
+    circuitbreaker:
+      resilience4j:
+        disable-time-limiter: true
     gateway:
-      # Prefix strip yok: backend'ler zaten /api/orders, /api/payments... dinliyor.
-      # URI'ler env ile override: Docker'da http://order-service:8081, IDE'de localhost.
+      # Prefix strip yok: backend'ler zaten /api/orders ... dinliyor.
+      default-filters:
+        - name: Retry
+          args:
+            retries: 2
+            methods: GET
+            series: SERVER_ERROR
+            backoff:
+              firstBackoff: 40ms
+              maxBackoff: 200ms
       routes:
+        - id: auth
+          uri: ${CUSTOMER_SERVICE_URI:http://localhost:8084}
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: customerService
+                fallbackUri: forward:/fallback/customer
         - id: customer-service
           uri: ${CUSTOMER_SERVICE_URI:http://localhost:8084}
           predicates:
             - Path=/api/customers/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: customerService
+                fallbackUri: forward:/fallback/customer
         - id: restaurant-service
           uri: ${RESTAURANT_SERVICE_URI:http://localhost:8083}
           predicates:
             - Path=/api/restaurants/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: restaurantService
+                fallbackUri: forward:/fallback/restaurant
         - id: order-service
           uri: ${ORDER_SERVICE_URI:http://localhost:8081}
           predicates:
             - Path=/api/orders/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: orderService
+                fallbackUri: forward:/fallback/order
         - id: payment-service
           uri: ${PAYMENT_SERVICE_URI:http://localhost:8082}
           predicates:
             - Path=/api/payments/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: paymentService
+                fallbackUri: forward:/fallback/payment
         - id: delivery-service
           uri: ${DELIVERY_SERVICE_URI:http://localhost:8085}
           predicates:
             - Path=/api/deliveries/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: deliveryService
+                fallbackUri: forward:/fallback/delivery
         - id: notification-service
           uri: ${NOTIFICATION_SERVICE_URI:http://localhost:8086}
           predicates:
             - Path=/api/notifications/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: notificationService
+                fallbackUri: forward:/fallback/notification
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 8
+        minimumNumberOfCalls: 4
+        permittedNumberOfCallsInHalfOpenState: 2
+        failureRateThreshold: 50
+        waitDurationInOpenState: 8s
+        registerHealthIndicator: true
+    instances:
+      customerService:
+        baseConfig: default
+      restaurantService:
+        baseConfig: default
+      orderService:
+        baseConfig: default
+      paymentService:
+        baseConfig: default
+      deliveryService:
+        baseConfig: default
+      notificationService:
+        baseConfig: default
+
+nefis:
+  security:
+    enabled: ${NEFIS_SECURITY_ENABLED:true}
+  jwt:
+    secret: "${NEFIS_JWT_SECRET:nefis-yemek-dev-jwt-secret-do-not-use-in-prod!}"
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,gateway
+        include: health,info,gateway,prometheus,metrics,circuitbreakers
   endpoint:
     health:
       show-details: always
@@ -46,7 +126,19 @@ management:
         enabled: true
     gateway:
       enabled: true
+  health:
+    circuitbreakers:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLE:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://localhost:9411/api/v2/spans}
 
 logging:
   pattern:
-    level: "%5p [${spring.application.name:}]"
+    level: "%5p [${spring.application.name:},%X{traceId:-}]"

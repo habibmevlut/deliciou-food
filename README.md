@@ -4,7 +4,7 @@ Kurgusal bir yemek sipariş platformu. Amaç production'a çıkmak değil; mikro
 
 Milestone'lar **tek branch'te** birikir. README her zaman o ana kadar yapılanın tam halidir; görmek için branch değiştirmen gerekmez.
 
-Şu an **Milestone 3**: Saga + Outbox + **idempotent consumer** (payment) + **CQRS read model** (order history). Dış dünya hâlâ yalnızca **:8080** üzerinden konuşur.
+Şu an **Milestone 4**: Saga + Outbox + idempotent/CQRS + **JWT (kapıda)** + **circuit breaker** + **Prometheus / Grafana / Zipkin**. Dış dünya hâlâ yalnızca **:8080**; artık çoğu path bilet (JWT) ister.
 
 ## Gateway nedir, burada hangisi kullanıldı?
 
@@ -27,25 +27,25 @@ Kullanılmayanlar (bilerek):
 | nginx / Envoy | Harika prod proxy'ler; bu laboratuvarda route + ileride JWT Java kodunda yaşasın diye Spring'i seçtik |
 | `spring-boot-starter-web` gateway içinde | Tomcat + Netty çakışır. Gateway **yalnızca WebFlux** |
 
-Nasıl çalışıyor: `application.yml` içinde `Path=/api/orders/**` → `localhost:8081` (IDE) veya `http://order-service:8081` (Docker). **Prefix strip yok** — backend zaten `/api/orders` dinliyor. Health: `GET :8080/actuator/health` gateway'in kendisi; `include: gateway` ile route listesi de actuator'da.
+Health: `GET :8080/actuator/health` gateway'in kendisi (JWT **yok**). `include: gateway` ile route listesi actuator'da.
 
-## Milestone 3'te ne var / ne yok
+JWT, sigorta, Grafana: [`docs/m4-kapı-sigorta-sayaç.md`](docs/m4-kapı-sigorta-sayaç.md) — tıklama lab: [`docs/observability-lab.md`](docs/observability-lab.md).
+
+## Milestone 4'te ne var / ne yok
 
 | Var | Yok (sonraki milestone) |
 | --- | --- |
-| 6 iş servisi + api-gateway, 6 Postgres, Flyway, CRUD | JWT, Resilience4j, Zipkin (M4) |
-| Spring Cloud Gateway (`:8080`) | restaurant/delivery `processed_events` |
-| Kafka KRaft, 6 topic, Kafka UI `:8090` | payment/restaurant/delivery outbox |
-| `OrderSagaOrchestrator` + compensating iade | notification Kafka consumer |
-| order-service `outbox_messages` + polling publisher | Testcontainers (M5) |
-| payment-service `processed_events` (idempotent consumer) | |
-| order-service `order_history_view` (CQRS okuma modeli) | |
+| JWT kapıda (`POST /api/auth/login`, Bearer) | Şifre / refresh token / OAuth sağlayıcı |
+| Resilience4j circuit breaker + GET retry (gateway) | restaurant/delivery `processed_events` |
+| Actuator prometheus + metrics tüm servislerde | payment/restaurant/delivery outbox |
+| Prometheus `:9090`, Grafana `:3000`, Zipkin `:9411` | Testcontainers (M5) |
+| Saga + outbox + history + processed_events | notification Kafka consumer |
 
-## Mimari (M3)
+## Mimari (M4)
 
 ```
                     ┌─────────────┐
-         :8080      │ api-gateway │     Spring Cloud Gateway (WebFlux)
+         :8080      │ api-gateway │     JWT + circuit breaker + Zipkin header
                     └──────┬──────┘
            ┌─────────┬─────┼─────┬─────────┬──────────┐
            ▼         ▼     ▼     ▼         ▼          ▼
@@ -54,15 +54,9 @@ Nasıl çalışıyor: `application.yml` içinde `Path=/api/orders/**` → `local
            ▼         ▼       ▼      ▼        ▼          ▼
          PG 5437   PG 5435  PG 5436 PG 5434  PG 5438    PG 5439
                              │
-                    OrderSagaOrchestrator
-                             │
-                    outbox_messages (aynı TX)
-                    order_history_view (film şeridi)
-                             │ poller ~250 ms
-                          Kafka :9092 (KRaft)
-                               │
+                          Kafka :9092
                           Kafka UI :8090
-                          payment processed_events
+                          Prometheus :9090  Grafana :3000  Zipkin :9411
 ```
 
 ## Neden Saga? Neden 2PC değil?
@@ -77,7 +71,7 @@ Choreography (her servis bir sonrakini tetikler) M2'de yok; tek yönetmen okumay
 
 Kafka ACK olup `published_at` yazılmadan ölünürse aynı komut bir daha gider. **Milestone 3** bunu payment tarafında kapatır: `processed_events` aynı `commandId`'yi ikinci kez yemez. Ayrıntı: [`docs/cqrs-idempotency.md`](docs/cqrs-idempotency.md).
 
-**CQRS (order):** `GET /api/orders/{id}` yazma modeli (şu anki status). `GET /api/orders/{id}/history` okuma modeli (neler oldu). İki tablo, aynı servis.
+**JWT (M4):** Bilet kapıda. `POST /api/customers` ve `POST /api/auth/login` açık; gerisi `Authorization: Bearer`. Backend'ler JWT doğrulamaz.
 
 ## Kafka topic listesi
 
@@ -101,7 +95,7 @@ Kodda nasıl handle ediliyor: [`docs/kafka-orchestration.md`](docs/kafka-orchest
 Neden outbox: [`docs/kafka-outbox.md`](docs/kafka-outbox.md)  
 Neden processed_events / history: [`docs/cqrs-idempotency.md`](docs/cqrs-idempotency.md)
 
-Kısaca: `docker compose up -d` → IntelliJ tum servisler → Postman klasör **8** mutlu yol (`forceRestaurantAccept: true`) → 1–3 sn sonra GET order = `CONFIRMED`. `status: "PENDING"` = saga yok (CRUD).
+Kısaca: `docker compose up -d` → IntelliJ tum servisler → Postman Create customer → **Login** → klasör **8** mutlu yol.
 
 ## Red / compensate hangi loglarda?
 
@@ -125,9 +119,9 @@ Broker'ın kendisi bir web arayüzü sunmaz. Topic, mesaj ve consumer group gör
 **Adım adım senaryolar (Postman + Kafka UI):** [`docs/kafka-saga-lab.md`](docs/kafka-saga-lab.md)  
 **Kodda orchestration (komut / event / compensate):** [`docs/kafka-orchestration.md`](docs/kafka-orchestration.md)  
 **Outbox (önce Postgres, sonra Kafka):** [`docs/kafka-outbox.md`](docs/kafka-outbox.md)  
-**Idempotent consumer + CQRS history:** [`docs/cqrs-idempotency.md`](docs/cqrs-idempotency.md)
+**JWT / sigorta / Grafana / Zipkin:** [`docs/m4-kapı-sigorta-sayaç.md`](docs/m4-kapı-sigorta-sayaç.md) — lab [`docs/observability-lab.md`](docs/observability-lab.md)
 
-Kısaca: [http://localhost:8090](http://localhost:8090) — cluster `nefis-yemek`. Port **8090** (gateway **8080**). Bu Prometheus/Grafana değil (M4).
+Kısaca: [http://localhost:8090](http://localhost:8090) — cluster `nefis-yemek`. Port **8090** (gateway **8080**). Grafana **:3000**, Zipkin **:9411**, Prometheus **:9090**.
 
 ```bash
 docker compose up -d
@@ -143,6 +137,7 @@ docker compose up -d
 
 | Path | Hedef (IDE) | Docker URI |
 | --- | --- | --- |
+| `/api/auth/**` | localhost:8084 | http://customer-service:8084 |
 | `/api/customers/**` | localhost:8084 | http://customer-service:8084 |
 | `/api/restaurants/**` | localhost:8083 | http://restaurant-service:8083 |
 | `/api/orders/**` | localhost:8081 | http://order-service:8081 |
@@ -162,17 +157,25 @@ curl -sS -X POST http://localhost:8080/api/customers \
   -H 'Content-Type: application/json' \
   -d '{"fullName":"Ali Veli","email":"ali@example.com","phone":"5551112233"}'
 
+TOKEN=$(curl -sS -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"ali@example.com"}' | python3 -c "import json,sys; print(json.load(sys.stdin)['accessToken'])")
+
+curl -sS http://localhost:8080/api/restaurants -H "Authorization: Bearer $TOKEN"
+
 curl -sS -X POST http://localhost:8080/api/restaurants \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"name":"Adana Sofrası","address":"Kadıköy","cuisine":"Türk","open":true}'
 
 curl -sS -X POST http://localhost:8080/api/orders \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"customerId":"<CUSTOMER_ID>","restaurantId":"<RESTAURANT_ID>","totalAmount":149.90,"forceRestaurantAccept":true}'
 
-curl -sS http://localhost:8080/api/orders/outbox
-curl -sS http://localhost:8080/api/orders/<ORDER_ID>/history
-curl -sS http://localhost:8080/api/payments/processed-events
+curl -sS http://localhost:8080/api/orders/outbox -H "Authorization: Bearer $TOKEN"
+curl -sS http://localhost:8080/api/orders/<ORDER_ID>/history -H "Authorization: Bearer $TOKEN"
+curl -sS http://localhost:8080/api/payments/processed-events -H "Authorization: Bearer $TOKEN"
 ```
 
 notification-service konsola `[MOCK SMS] to=...` yazar; gerçek SMS yok. M2'de saga SMS atmaz.
@@ -190,6 +193,9 @@ notification-service konsola `[MOCK SMS] to=...` yazar; gerçek SMS yok. M2'de s
 | notification-service | 8086 | — |
 | kafka | 9092 | KRaft, tek broker |
 | kafka-ui | 8090 | http://localhost:8090 |
+| prometheus | 9090 | http://localhost:9090 |
+| grafana | 3000 | http://localhost:3000 admin/admin |
+| zipkin | 9411 | http://localhost:9411 |
 | order-db | 5436 | `order` / `orderdb` |
 | payment-db | 5434 | `payment` / `paymentdb` |
 | restaurant-db | 5435 | `restaurant` / `restaurantdb` |
@@ -209,20 +215,19 @@ notification-service konsola `[MOCK SMS] to=...` yazar; gerçek SMS yok. M2'de s
 docker compose --profile apps up --build
 ```
 
-`--profile apps` olmazsa Postgres, Kafka **ve Kafka UI** (`:8090`) ayağa kalkar (IntelliJ için doğru). Java + gateway container'dan koşsun dersen profile gerekir.
+`--profile apps` olmazsa Postgres, Kafka, Kafka UI (`:8090`), **Prometheus :9090**, **Grafana :3000**, **Zipkin :9411** ayağa kalkar (IntelliJ için doğru).
 
-İlk build uzun sürebilir. Dışarıdan yalnızca gateway:
+İlk build uzun sürebilir. Dışarıdan yalnızca gateway. Health biletsiz; restoran listesi JWT ister (önce Create customer + Login).
 
 ```bash
 curl http://localhost:8080/actuator/health
-curl http://localhost:8080/api/restaurants
 ```
 
 Sadece altyapıyı ayağa kaldırıp servisleri IDE'den çalıştırmak için:
 
 ```bash
 docker compose up -d
-docker compose ps   # nefis-kafka :9092, nefis-kafka-ui :8090, 6 Postgres
+docker compose ps   # Kafka :9092, UI :8090, Prometheus :9090, Grafana :3000, Zipkin :9411, 6 Postgres
 # IntelliJ: Nefis Yemek: tum servisler (gateway dahil)
 ```
 
@@ -257,7 +262,7 @@ docker compose up -d
 docker compose ps
 ```
 
-`nefis-order-db` satırında `0.0.0.0:5436->5432/tcp`, `nefis-kafka` satırında `9092`, `nefis-kafka-ui` satırında `8090` görünmeli. Tarayıcı: http://localhost:8090
+`nefis-order-db` satırında `0.0.0.0:5436->5432/tcp`, `nefis-kafka` satırında `9092`, `nefis-kafka-ui` satırında `8090` görünmeli. M4: Prometheus `:9090`, Grafana `:3000` (`admin`/`admin`), Zipkin `:9411`. Tarayıcı: http://localhost:8090
 
 ### 3) Build
 
@@ -289,12 +294,12 @@ Konsolda `Started ApiGatewayApplication` ve `*ServiceApplication` satırları g�
 | `Connection refused` / `HikariPool` | `docker compose ps` — Postgres portları + `nefis-kafka :9092` |
 | `Connection to localhost:9092 refused` | Kafka yok: `docker compose up -d` |
 | `localhost:8090` açılmıyor | `docker compose ps` — `nefis-kafka-ui` UP mi? İlk pull uzun sürebilir. Port 8090 doluysa değiştir |
+| `401` Unauthorized | Create customer + klasör **0b Login**. Postman Replace. Health biletsiz; List restaurants biletli |
 | `Port 8081 was already in use` | `docker compose --profile apps stop` |
 | Run config: *module not specified* | Maven Reload |
 | Flyway / `Schema-validation: missing table` | Order URL `localhost:5436/orderdb`. V2 `cancel_reason`, V3 `outbox_messages`, V4 `order_history_view`. Payment V2 `processed_events`. `git pull` + ilgili servisi restart |
 | SDK is not defined | Project Structure → SDK 21, Maven Reload |
 | restaurant-service `No default constructor` / `RestaurantDecisionPolicy` | İki kurucu varken Spring `@Autowired` ister. `git pull` sonrası Maven Reload ve restaurant-service restart |
-| payment-service `trusted packages` / `SerializationException` döngüsü | JsonDeserializer `com.nefisyemek.contracts` alt paketleri (`command`, `event`) kapsamaz. Kod `com.nefisyemek.contracts.*` kullanır. `git pull`, Maven Reload, order/payment/restaurant/delivery'yi restart. Kafka'yı silme — offset 0'daki mesaj geçerlidir. |
 
 ## API'yi denemek (Postman)
 
@@ -303,7 +308,9 @@ Koleksiyon: **`http/Nefis-Yemek.postman_collection.json`**
 1. **Import → File** → bu JSON
 2. Tekrar importte **Replace** (koleksiyon id sabit)
 3. Hepsi `{{gateway}}` = `http://localhost:8080`
-4. CRUD klasörleri (1–7) + **8. Saga** + **9. Outbox** + **10. Idempotency / History**
+4. CRUD klasörleri (1–7) + **8. Saga** + **9. Outbox** + **10. Idempotency / History** + **0b. Login** + **11. Observability**
+
+Önce **Create customer**, sonra **Login**. Koleksiyon Bearer `{{token}}` gönderir. Health ve Login biletsiz.
 
 **8081–8086'ya istek atma.**
 
@@ -335,4 +342,4 @@ Hibernate `ddl-auto: validate` — şemayı JPA üretmez, Flyway üretir.
 
 ## Sonraki adım
 
-Milestone 4: Resilience, Security, Observability (Resilience4j, JWT, Actuator, Prometheus, Grafana, Zipkin).
+Milestone 5: Test Piramidi (Testcontainers + WireMock + contract test).

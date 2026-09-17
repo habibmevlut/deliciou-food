@@ -69,6 +69,7 @@ Yönetmen `order-service`. Payment/restaurant/delivery birbirini doğrudan arama
    ```
 
    `nefis-kafka` (9092) ve `nefis-kafka-ui` (8090) **UP** olmalı.
+   M4 ile Prometheus (:9090), Grafana (:3000), Zipkin (:9411) de ayağa kalkar.
 
 2. IntelliJ: **Nefis Yemek: tum servisler**. Konsolda `Started *Application` gör.
 
@@ -83,11 +84,12 @@ Hazırlık isteği (saga’dan önce, bir kez):
 
 | Sıra | Postman | Neden |
 | --- | --- | --- |
-| 1 | **0. Gateway → Health** | 8080 ayakta mı |
-| 2 | **1. customer → Create customer** | `customerId` dolar |
-| 3 | **2. restaurant → Create restaurant** | `restaurantId` dolar |
+| 1 | **0. Gateway → Health** | 8080 ayakta mı (JWT yok) |
+| 2 | **1. customer → Create customer** | `customerId` + `email` dolar (JWT yok) |
+| 3 | **0b. Auth → Login** | `token` dolar; sonrası Bearer |
+| 4 | **2. restaurant → Create restaurant** | `restaurantId` dolar |
 
-Bu iki id olmadan klasör 8 çalışmaz.
+Bu iki id + Login token olmadan klasör 8 **401** verir.
 
 ---
 

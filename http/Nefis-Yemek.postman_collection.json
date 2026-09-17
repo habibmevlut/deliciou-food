@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-nefisyemek0001",
     "name": "Nefis Yemek",
-    "description": "Milestone 3 — tek kapı + Saga + Outbox + idempotent consumer + CQRS history. Tüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. docker compose up -d (Postgres + Kafka + Kafka UI :8090), sonra IntelliJ: Nefis Yemek: tum servisler.\n2. CRUD için 1–7. Asıl ders: 8. Saga, 9. Outbox, 10. Idempotency / History.\n3. Create istekleri id'yi koleksiyon değişkenine yazar.\n4. Kafka lab: docs/kafka-saga-lab.md — UI http://localhost:8090\n5. Kod: docs/kafka-orchestration.md — Outbox: docs/kafka-outbox.md — M3: docs/cqrs-idempotency.md\n\nYeniden import: Postman → Import → Replace (koleksiyon id sabit).\n\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
+    "description": "Milestone 4 — tek kapı + JWT + circuit breaker + Prometheus/Grafana/Zipkin.\nTüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. docker compose up -d (Postgres + Kafka + UI :8090 + Prometheus :9090 + Grafana :3000 + Zipkin :9411).\n   IntelliJ: Nefis Yemek: tum servisler.\n2. Create customer, sonra 0b. Login — token dolar. Sonrası Bearer {{token}}.\n3. CRUD 1–7, Saga 8, Outbox 9, History 10. Observability 11.\n4. Sade anlatım: docs/m4-kapı-sigorta-sayaç.md — lab: docs/observability-lab.md\n\nYeniden import: Postman → Import → Replace.\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -33,6 +33,14 @@
     {
       "key": "notificationId",
       "value": ""
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "email",
+      "value": "ali@example.com"
     }
   ],
   "item": [
@@ -46,14 +54,65 @@
             "method": "GET",
             "header": [],
             "url": "{{gateway}}/actuator/health",
-            "description": "Gateway'in kendisi. Backend'ler down olsa bile bu UP olabilir."
+            "description": "Gateway'in kendisi. Backend'ler down olsa bile bu UP olabilir.",
+            "auth": {
+              "type": "noauth"
+            }
           }
         }
       ]
     },
     {
+      "name": "0b. Auth — Login",
+      "description": "Önce Create customer. Sonra Login. accessToken koleksiyon token değişkenine yazılır. Şifre yok; laboratuvar e-posta ile tanır.",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{gateway}}/api/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create customer ile aynı e-posta. Cevaptaki accessToken bilet. Health ve Create customer biletsiz."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const t = pm.response.json().accessToken;",
+                  "  if (t) pm.collectionVariables.set('token', t);",
+                  "  const id = pm.response.json().customerId;",
+                  "  if (id) pm.collectionVariables.set('customerId', id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "1. customer-service  /api/customers",
-      "description": "Kullanıcı + adres. Kendi Postgres'i (5437). Login/JWT Milestone 4.",
+      "description": "Kullanıcı + adres. Create biletsiz; diğerleri JWT. Login klasör 0b.",
       "item": [
         {
           "name": "Create customer",
@@ -74,6 +133,9 @@
                   "language": "json"
                 }
               }
+            },
+            "auth": {
+              "type": "noauth"
             }
           },
           "event": [
@@ -85,6 +147,8 @@
                   "if (pm.response.code === 201 || pm.response.code === 200) {",
                   "  const id = pm.response.json().id;",
                   "  if (id) pm.collectionVariables.set('customerId', id);",
+                  "  const email = pm.response.json().email;",
+                  "  if (email) pm.collectionVariables.set('email', email);",
                   "}"
                 ]
               }
@@ -738,6 +802,46 @@
           }
         }
       ]
+    },
+    {
+      "name": "11. Observability",
+      "description": "Prometheus/Grafana/Zipkin. Lab: docs/observability-lab.md. Grafana http://localhost:3000 admin/admin. Zipkin http://localhost:9411.",
+      "item": [
+        {
+          "name": "Prometheus metrics (gateway)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/actuator/prometheus",
+            "description": "JWT yok. Prometheus bu endpoint'i 5 sn'de bir çeker."
+          }
+        },
+        {
+          "name": "Circuit breakers (gateway health)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway}}/actuator/health",
+            "description": "Restaurant-service'i durdurup List restaurants birkaç kez atınca circuitbreakers kısmı değişebilir."
+          }
+        }
+      ]
     }
-  ]
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  }
 }
