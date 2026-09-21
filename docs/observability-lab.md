@@ -1,6 +1,6 @@
 # Milestone 4 lab — JWT, sigorta, Grafana, Zipkin
 
-Sade anlatım: [`m4-kapı-sigorta-sayaç.md`](m4-kapı-sigorta-sayaç.md)
+Neden bakıyorsun (sayı vs bir isteğin filmi): [`m4-kapı-sigorta-sayaç.md`](m4-kapı-sigorta-sayaç.md)
 
 ```bash
 git pull
@@ -33,18 +33,24 @@ Kapı log’unda token yoksa Spring Security `401 Unauthorized`.
 
 ---
 
-## C) Grafana
+## C) Prometheus + Grafana (sayı)
 
-Tarayıcı: http://localhost:3000 — `admin` / `admin`.
+Neden: Kafka UI mektuba bakar; burası **servis ayakta mı, kaç istek geldi**. Prometheus sayıyı depoya koyar, Grafana çizer.
 
-Sol **Dashboards** → **Nefis Yemek — genel**. Postman’da birkaç istek at, grafikte çizgi.
-
-Prometheus hedefleri: http://localhost:9090 → Status → Targets. IntelliJ servisleri ayaktaysa 8080–8086 **UP**.
+1. http://localhost:9090 → **Status → Targets**. IntelliJ’de tum servisler ayaktaysa `8080`–`8086` **UP**.
+2. Restaurant-service’i Stop et, Targets’da `:8083` **DOWN** olsun. Tekrar Run, UP’a dönsün.
+3. http://localhost:3000 — `admin` / `admin`.
+4. Sol **Dashboards** → **Nefis Yemek — genel**.
+5. Postman’da List restaurants / Sipariş Ver birkaç kez. “HTTP istek / saniye” çizgisi kımıldar. Servisi durdurunca “ayakta mı” çizgisi 0’a iner.
 
 ---
 
-## D) Zipkin
+## D) Zipkin (bir isteğin yolu)
 
-http://localhost:9411 → Run query (servis `api-gateway`).
+Neden: Grafana toplamı gösterir. Zipkin **şu an attığın tek isteğin** kapıdan hangi servise gittiğini kutu kutu çizer.
 
-Bir Get restaurants / Sipariş Ver’den sonra iz: `api-gateway` → `restaurant-service` (ve saga’da diğerleri). Aynı `traceId` IntelliJ log satırında `[api-gateway,<traceId>]`.
+1. Login + **List restaurants** (200).
+2. http://localhost:9411 → servis `api-gateway` → **Run query**.
+3. Bir iz aç: `api-gateway` ve `restaurant-service` kutuları. Süre ms cinsinden.
+4. IntelliJ gateway log’unda `[api-gateway,<traceId>]` — aynı numara Zipkin izinin id’si.
+5. (İsteğe bağlı) restaurant-service Stop + List restaurants, sonra Zipkin: kopuk / sadece kapı kutusu = istek arkada düşmüş.

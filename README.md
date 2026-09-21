@@ -29,7 +29,7 @@ Kullanılmayanlar (bilerek):
 
 Health: `GET :8080/actuator/health` gateway'in kendisi (JWT **yok**). `include: gateway` ile route listesi actuator'da.
 
-JWT, sigorta, Grafana: [`docs/m4-kapı-sigorta-sayaç.md`](docs/m4-kapı-sigorta-sayaç.md) — tıklama lab: [`docs/observability-lab.md`](docs/observability-lab.md).
+JWT, sigorta, **neden Prometheus/Grafana/Zipkin** (sayı vs bir isteğin filmi): [`docs/m4-kapı-sigorta-sayaç.md`](docs/m4-kapı-sigorta-sayaç.md) — tıklama lab: [`docs/observability-lab.md`](docs/observability-lab.md).
 
 ## Milestone 4'te ne var / ne yok
 
@@ -121,7 +121,7 @@ Broker'ın kendisi bir web arayüzü sunmaz. Topic, mesaj ve consumer group gör
 **Outbox (önce Postgres, sonra Kafka):** [`docs/kafka-outbox.md`](docs/kafka-outbox.md)  
 **JWT / sigorta / Grafana / Zipkin:** [`docs/m4-kapı-sigorta-sayaç.md`](docs/m4-kapı-sigorta-sayaç.md) — lab [`docs/observability-lab.md`](docs/observability-lab.md)
 
-Kısaca: [http://localhost:8090](http://localhost:8090) — cluster `nefis-yemek`. Port **8090** (gateway **8080**). Grafana **:3000**, Zipkin **:9411**, Prometheus **:9090**.
+Kısaca: [http://localhost:8090](http://localhost:8090) — cluster `nefis-yemek`. Port **8090** (gateway **8080**). Kafka UI **kuyruktaki mesaj**; Prometheus/Grafana **servis nabzı**; Zipkin **tek bir isteğin hangi servislerden geçtiği**. Grafana **:3000**, Zipkin **:9411**, Prometheus **:9090**.
 
 ```bash
 docker compose up -d
