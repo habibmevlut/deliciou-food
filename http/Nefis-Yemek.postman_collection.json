@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a1b2c3d4-e5f6-7890-abcd-nefisyemek0001",
     "name": "Nefis Yemek",
-    "description": "Milestone 4 — tek kapı + JWT + circuit breaker + Prometheus/Grafana/Zipkin.\nTüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. docker compose up -d (Postgres + Kafka + UI :8090 + Prometheus :9090 + Grafana :3000 + Zipkin :9411).\n   IntelliJ: Nefis Yemek: tum servisler.\n2. Create customer, sonra 0b. Login — token dolar. Sonrası Bearer {{token}}.\n3. CRUD 1–7, Saga 8, Outbox 9, History 10. Observability 11.\n4. Sade anlatım: docs/m4-kapı-sigorta-sayaç.md — lab: docs/observability-lab.md\n\nYeniden import: Postman → Import → Replace.\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
+    "description": "Milestone 5 — tek kapı + JWT + circuit breaker + Prometheus/Grafana/Zipkin + test piramidi.\nTüm istekler {{gateway}} (http://localhost:8080).\n\nNasıl kullanırsın\n1. docker compose up -d (Postgres + Kafka + UI :8090 + Prometheus :9090 + Grafana :3000 + Zipkin :9411).\n   IntelliJ: Nefis Yemek: tum servisler.\n2. Create customer, sonra 0b. Login — token dolar. Sonrası Bearer {{token}}.\n3. CRUD 1–7, Saga 8, Outbox 9, History 10. Observability 11.\n4. Otomatik test (Postman değil): ./mvnw test — docs/test-piramidi.md\n5. Sade anlatım: docs/m4-kapı-sigorta-sayaç.md — lab: docs/observability-lab.md\n\nYeniden import: Postman → Import → Replace.\n8081-8086'ya doğrudan istek atma; ders tek kapı.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

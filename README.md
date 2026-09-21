@@ -4,7 +4,7 @@ Kurgusal bir yemek sipariş platformu. Amaç production'a çıkmak değil; mikro
 
 Milestone'lar **tek branch'te** birikir. README her zaman o ana kadar yapılanın tam halidir; görmek için branch değiştirmen gerekmez.
 
-Şu an **Milestone 4**: Saga + Outbox + idempotent/CQRS + **JWT (kapıda)** + **circuit breaker** + **Prometheus / Grafana / Zipkin**. Dış dünya hâlâ yalnızca **:8080**; artık çoğu path bilet (JWT) ister.
+Şu an **Milestone 5**: Saga + Outbox + CQRS + JWT/sigorta/gözlem + **test piramidi** (Mockito + WireMock + Testcontainers). Dış dünya hâlâ yalnızca **:8080**.
 
 ## Gateway nedir, burada hangisi kullanıldı?
 
@@ -29,17 +29,17 @@ Kullanılmayanlar (bilerek):
 
 Health: `GET :8080/actuator/health` gateway'in kendisi (JWT **yok**). `include: gateway` ile route listesi actuator'da.
 
-JWT, sigorta, **neden Prometheus/Grafana/Zipkin** (sayı vs bir isteğin filmi): [`docs/m4-kapı-sigorta-sayaç.md`](docs/m4-kapı-sigorta-sayaç.md) — tıklama lab: [`docs/observability-lab.md`](docs/observability-lab.md).
+JWT, sigorta, **neden Prometheus/Grafana/Zipkin** (sayı vs bir isteğin filmi): [`docs/m4-kapı-sigorta-sayaç.md`](docs/m4-kapı-sigorta-sayaç.md) — tıklama lab: [`docs/observability-lab.md`](docs/observability-lab.md).  
+Test piramidi (neden unit / WireMock / Testcontainers): [`docs/test-piramidi.md`](docs/test-piramidi.md).
 
-## Milestone 4'te ne var / ne yok
+## Milestone 5'te ne var / ne yok
 
 | Var | Yok (sonraki milestone) |
 | --- | --- |
-| JWT kapıda (`POST /api/auth/login`, Bearer) | Şifre / refresh token / OAuth sağlayıcı |
-| Resilience4j circuit breaker + GET retry (gateway) | restaurant/delivery `processed_events` |
-| Actuator prometheus + metrics tüm servislerde | payment/restaurant/delivery outbox |
-| Prometheus `:9090`, Grafana `:3000`, Zipkin `:9411` | Testcontainers (M5) |
+| Unit (`*Test`) + WireMock sözleşme + Testcontainers IT | Spring Cloud Contract / Pact |
+| JWT kapıda, circuit breaker, Prometheus/Grafana/Zipkin | restaurant/delivery `processed_events` |
 | Saga + outbox + history + processed_events | notification Kafka consumer |
+| | Strangler Fig / `review-service` (M6, opsiyonel) |
 
 ## Mimari (M4)
 
@@ -119,7 +119,8 @@ Broker'ın kendisi bir web arayüzü sunmaz. Topic, mesaj ve consumer group gör
 **Adım adım senaryolar (Postman + Kafka UI):** [`docs/kafka-saga-lab.md`](docs/kafka-saga-lab.md)  
 **Kodda orchestration (komut / event / compensate):** [`docs/kafka-orchestration.md`](docs/kafka-orchestration.md)  
 **Outbox (önce Postgres, sonra Kafka):** [`docs/kafka-outbox.md`](docs/kafka-outbox.md)  
-**JWT / sigorta / Grafana / Zipkin:** [`docs/m4-kapı-sigorta-sayaç.md`](docs/m4-kapı-sigorta-sayaç.md) — lab [`docs/observability-lab.md`](docs/observability-lab.md)
+**JWT / sigorta / Grafana / Zipkin:** [`docs/m4-kapı-sigorta-sayaç.md`](docs/m4-kapı-sigorta-sayaç.md) — lab [`docs/observability-lab.md`](docs/observability-lab.md)  
+**Test piramidi:** [`docs/test-piramidi.md`](docs/test-piramidi.md)
 
 Kısaca: [http://localhost:8090](http://localhost:8090) — cluster `nefis-yemek`. Port **8090** (gateway **8080**). Kafka UI **kuyruktaki mesaj**; Prometheus/Grafana **servis nabzı**; Zipkin **tek bir isteğin hangi servislerden geçtiği**. Grafana **:3000**, Zipkin **:9411**, Prometheus **:9090**.
 
@@ -316,13 +317,19 @@ Koleksiyon: **`http/Nefis-Yemek.postman_collection.json`**
 
 IntelliJ HTTP Client: `http/api.http`. Terminal: `./http/smoke.sh`.
 
-## Unit testler
+## Testler
 
-Veritabanı / Kafka gerektirmez:
+Piramit: [`docs/test-piramidi.md`](docs/test-piramidi.md). Postman elle dener; bu komut otomatik dener.
 
 ```bash
 ./mvnw test
 ```
+
+- `*Test` — Mockito, DB/Kafka yok (hızlı).
+- `GatewayRestaurantContractIT` — WireMock, Docker yok.
+- `*IT` (customer/restaurant/order/payment) — Testcontainers. Docker yoksa **atlanır**, kırmızı olmaz. Log’da `Could not find a valid Docker environment` görebilirsin; o atlama kontrolü, failure değil. Docker Desktop açıksa gerçek Postgres (ve Kafka) ayağa kalkar.
+
+IntelliJ: sınıfın üstüne sağ tık → **Run**. IT için Docker şart.
 
 ## Modül / katman yapısı
 
@@ -342,4 +349,4 @@ Hibernate `ddl-auto: validate` — şemayı JPA üretmez, Flyway üretir.
 
 ## Sonraki adım
 
-Milestone 5: Test Piramidi (Testcontainers + WireMock + contract test).
+Milestone 6 (opsiyonel): Strangler Fig — `review-service` ve gateway yönlendirmesi.
