@@ -6,6 +6,12 @@ Milestone'lar **tek branch'te** birikir. README her zaman o ana kadar yapılanı
 
 Şu an **Milestone 5**: Saga + Outbox + CQRS + JWT/sigorta/gözlem + **test piramidi** (Mockito + WireMock + Testcontainers). Dış dünya hâlâ yalnızca **:8080**.
 
+## Uçtan uca ne yaptık?
+
+Ali müşteri olur, login olur, “Sipariş Ver” der. Kapı bileti kontrol eder. order-service yönetmen: aynı deftere sipariş + outbox yazar, poller Kafka’ya taşır. Payment aynı `commandId`’yi ikinci kez yemez. Restoran kabul ederse kurye, `CONFIRMED`; redde iade, `CANCELLED`. History film şeridi, Grafana sayı, Zipkin bir isteğin yolu. `./mvnw test` bunu otomatik dener.
+
+Konular + gerçek kod parçaları: [`docs/hikaye.md`](docs/hikaye.md).
+
 ## Gateway nedir, burada hangisi kullanıldı?
 
 Gateway bir **ters vekil (reverse proxy)** + **tek kapı**. İstemci altı porta dağılmaz; `http://localhost:8080/api/...` der, gateway path'e bakıp isteği doğru servise iletir (method, header, body aynı kalır). JSON'u yorumlamaz, sipariş iş kuralı çalıştırmaz, Postgres'e dokunmaz.
@@ -28,6 +34,8 @@ Kullanılmayanlar (bilerek):
 | `spring-boot-starter-web` gateway içinde | Tomcat + Netty çakışır. Gateway **yalnızca WebFlux** |
 
 Health: `GET :8080/actuator/health` gateway'in kendisi (JWT **yok**). `include: gateway` ile route listesi actuator'da.
+
+**Uçtan uca hikâye** (Ali sipariş verdi → ne öğrendik, kod parçalarıyla): [`docs/hikaye.md`](docs/hikaye.md).
 
 JWT, sigorta, **neden Prometheus/Grafana/Zipkin** (sayı vs bir isteğin filmi): [`docs/m4-kapı-sigorta-sayaç.md`](docs/m4-kapı-sigorta-sayaç.md) — tıklama lab: [`docs/observability-lab.md`](docs/observability-lab.md).  
 Test piramidi (neden unit / WireMock / Testcontainers): [`docs/test-piramidi.md`](docs/test-piramidi.md).
@@ -120,7 +128,8 @@ Broker'ın kendisi bir web arayüzü sunmaz. Topic, mesaj ve consumer group gör
 **Kodda orchestration (komut / event / compensate):** [`docs/kafka-orchestration.md`](docs/kafka-orchestration.md)  
 **Outbox (önce Postgres, sonra Kafka):** [`docs/kafka-outbox.md`](docs/kafka-outbox.md)  
 **JWT / sigorta / Grafana / Zipkin:** [`docs/m4-kapı-sigorta-sayaç.md`](docs/m4-kapı-sigorta-sayaç.md) — lab [`docs/observability-lab.md`](docs/observability-lab.md)  
-**Test piramidi:** [`docs/test-piramidi.md`](docs/test-piramidi.md)
+**Test piramidi:** [`docs/test-piramidi.md`](docs/test-piramidi.md)  
+**Uçtan uca hikâye:** [`docs/hikaye.md`](docs/hikaye.md)
 
 Kısaca: [http://localhost:8090](http://localhost:8090) — cluster `nefis-yemek`. Port **8090** (gateway **8080**). Kafka UI **kuyruktaki mesaj**; Prometheus/Grafana **servis nabzı**; Zipkin **tek bir isteğin hangi servislerden geçtiği**. Grafana **:3000**, Zipkin **:9411**, Prometheus **:9090**.
 
