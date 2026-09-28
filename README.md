@@ -12,6 +12,8 @@ Ali müşteri olur, login olur, “Sipariş Ver” der. Kapı bileti kontrol ede
 
 Konular + gerçek kod parçaları: [`docs/hikaye.md`](docs/hikaye.md).
 
+Java mülakat soru–cevap (proje örnekleriyle): [`docs/mulakat-hazirlik.md`](docs/mulakat-hazirlik.md).
+
 ## Gateway nedir, burada hangisi kullanıldı?
 
 Gateway bir **ters vekil (reverse proxy)** + **tek kapı**. İstemci altı porta dağılmaz; `http://localhost:8080/api/...` der, gateway path'e bakıp isteği doğru servise iletir (method, header, body aynı kalır). JSON'u yorumlamaz, sipariş iş kuralı çalıştırmaz, Postgres'e dokunmaz.
