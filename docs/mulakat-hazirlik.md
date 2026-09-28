@@ -1,425 +1,471 @@
-# Nefis Yemek — Java Developer Mülakat Hazırlık
+# Nefis Yemek — mülakat soruları (sade dil)
 
-Bu dosya, projede öğrendiklerinden yola çıkarak **mülakat tadında soru + örnek cevap** setidir.
-Amacın ezber değil: her cevabı kendi koduna bağlamak.
+Bu dosya ezber kitabı değil.  
+Mülakatçı sorar → sen kendi projenle anlatırsın.
 
-Nasıl çalış:
+**Nasıl çalış:**
+1. Soruyu oku.
+2. Cevabı elinle kapat, kendi cümlelerinle söyle.
+3. Sonra aşağıdaki cevaba bak. Eksik bıraktığını not al.
 
-1. Soruyu oku, cevabı kapat, 1–2 dk sesli anlat.
-2. Sonra örnek cevabı oku; eksik bıraktığın “neden?” cümlesini not al.
-3. Her bölüm sonunda **1 dakikalık STAR** pratik cümlesini ezberle.
+Acele etme. Günde 5–6 soru yeter.
 
-İlgili lab’ler: [`hikaye.md`](hikaye.md) · [`kafka-orchestration.md`](kafka-orchestration.md) · [`kafka-outbox.md`](kafka-outbox.md) · [`cqrs-idempotency.md`](cqrs-idempotency.md) · [`m4-kapı-sigorta-sayaç.md`](m4-kapı-sigorta-sayaç.md) · [`test-piramidi.md`](test-piramidi.md)
-
----
-
-## 0) 60 saniyelik proje tanıtımı (ezberle)
-
-> “Nefis Yemek adında kurgusal bir yemek sipariş platformu yazdım. Amaç production değil; mikroservis pattern’lerini gerçek Java ile denemek.
-> Altı iş servisi var: customer, restaurant, order, payment, delivery, notification. Her birinin kendi PostgreSQL’i var — Database per Service.
-> Dış dünya yalnızca Spring Cloud Gateway `:8080`. Auth JWT ile kapıda.
-> ‘Sipariş Ver’ akışı Kafka üzerinde orchestration-based saga: ödeme → restoran → kurye. Restoran reddederse compensate ile iade ve `CANCELLED`.
-> Dual-write’ı transactional outbox ile, tekrar mesajı payment’te `processed_events` ile çözdüm. Order history bir CQRS okuma modeli.
-> Resilience4j circuit breaker, Prometheus/Grafana/Zipkin, test piramidinde Mockito + WireMock + Testcontainers kullandım.”
+Daha uzun lab’ler: [`hikaye.md`](hikaye.md) · [`kafka-outbox.md`](kafka-outbox.md) · [`cqrs-idempotency.md`](cqrs-idempotency.md)
 
 ---
 
-## 1) Java temeli
+## Önce şunu ezberle (projeni tanıt)
 
-### S1. Entity’yi API’den neden doğrudan dönmüyorsun?
+Bunu tek nefeste sıkıştırma. Üç parça halinde söyle:
 
-**Örnek cevap:**
-Entity JPA’ya bağlıdır: lazy ilişkiler, persistence context, veritabanı kolon isimleri sızabilir. API sözleşmesi için DTO/`record` kullanırım.
-Nefis Yemek’te `CreateOrderRequest` / `OrderResponse` record’ları var; controller entity değil response döner. Böylece iç model değişince dış JSON kırılmaz.
+**Parça 1 — ne yaptım?**  
+“Nefis Yemek diye kurgusal bir yemek sipariş uygulaması yazdım. Amaç canlıya almak değil. Mikroservis fikirlerini gerçek Java ile denemek.”
 
-### S2. `Optional` ne zaman, ne zaman değil?
+**Parça 2 — nasıl duruyor?**  
+“Altı servis var. Her birinin kendi Postgres’i var. Dışarıdan tek kapı var: gateway, port 8080. Giriş için JWT bileti kapıda kontrol ediliyor.”
 
-**Örnek cevap:**
-Repository `findById` gibi “belki yok” dönüşlerinde iyi. Alan tipi olarak entity içinde veya collection elemanı olarak kullanmam.
-Service’te `orElseThrow(() -> new ResourceNotFoundException(...))` ile 404’e map ederim; controller’da `Optional` gezinmem.
+**Parça 3 — zor kısım neydi?**  
+“Sipariş verince ödeme, restoran, kurye sırayla ilerliyor. Buna saga diyoruz. Mesajlar Kafka’dan gidiyor. Aynı iş iki kez olmasın diye outbox ve idempotency kullandım. Testleri de yazdım.”
 
-### S3. Checked vs unchecked exception — sen ne yaptın?
-
-**Örnek cevap:**
-Spring/REST tarafında çoğunlukla unchecked (`RuntimeException`) kullanırım. `ResourceNotFoundException`, `UnauthorizedException` gibi domain hataları runtime.
-`@RestExceptionHandler` bunları HTTP status’e çevirir. Checked exception REST katmanında gürültü yaratır; nadiren library zorlarsa sararım.
-
-### S4. Immutability neden önemli?
-
-**Örnek cevap:**
-Request/response ve Kafka mesajlarında immutability race ve yan etkiyi azaltır.
-Projede request DTO’ları `record`. Kafka contract’ları (`ChargePaymentCommand` vb.) da immutable mesaj şekli; “yap” komutunun içeriği yolda değişmesin diye.
-
-### S5. `equals` / `hashCode` entity’de nasıl?
-
-**Örnek cevap:**
-JPA entity’de business field’larla equals tehlikeli olabilir (henüz id yokken Set’e koyma). Genelde id bazlı veya equals override etmeden dikkatli kullanırım.
-Mülakatta dürüst cevap: “Entity’yi Set key yapmaktan kaçınırım; identity için UUID id kullanırım.”
-
-**1 dk STAR:** “Katmanda entity ile API’yi ayırdım; record DTO + merkezi exception handler ile sözleşmeyi temiz tuttum.”
+Bu üç parça yeter. Detayı sorarlarsa açarsın.
 
 ---
 
-## 2) Spring Boot & katmanlar (M0)
+## Bölüm A — Java / Spring temeli
 
-### S6. Controller / Service / Repository ayrımı neden?
+### Soru 1
+**Entity’yi neden doğrudan API’den dönmüyorsun?**
 
-**Örnek cevap:**
-- Controller: HTTP, validation, DTO mapping
-- Service: iş kuralı + transaction sınırı
-- Repository: veri erişimi
+Kısa cevap:  
+Entity veritabanına bağlı. API’ye ayrı bir cevap tipi koyarım.
 
-Nefis Yemek’te her serviste aynı iskelet var. Örn. `OrderController` → `OrderService` → `OrderRepository`. Saga da service/event katmanında; controller “Sipariş Ver” deyip işi service’e bırakır.
-
-### S7. `@Transactional` nereye konur?
-
-**Örnek cevap:**
-Genelde **service** metoduna. Controller’a koymazsın; transaction HTTP’ye bağlanmasın.
-`OrderSagaOrchestrator.start` `@Transactional`: order status + history + outbox satırı **aynı** Postgres transaction’ında yazılır. Read-only sorgulara `readOnly = true` veririm.
-
-### S8. Constructor injection neden field injection’dan iyi?
-
-**Örnek cevap:**
-Zorunlu bağımlılıklar final olur, testte mock geçmek kolay, döngüsel bağımlılık erken görünür.
-Projede orchestrator ve service’ler constructor ile alınıyor; field `@Autowired` ile gizli bağımlılık yok.
-
-### S9. Flyway + Hibernate `validate` ne demek?
-
-**Örnek cevap:**
-Şemayı Flyway migration yönetir (`V1__create_orders_table.sql`). Hibernate `ddl-auto: validate` ile entity ile tablo uyumsuzsa ayağa kalkmaz.
-Böylece “Hibernate sessizce kolon ekledi” sürprizi olmaz. Database-per-service’te her DB kendi migration’ını çalıştırır.
-
-### S10. Global exception handler ne işe yarar?
-
-**Örnek cevap:**
-`RestExceptionHandler` ile `ResourceNotFoundException` → 404, validation → 400 gibi tek format.
-Her controller’da try/catch kopyalamam. İstemciye tutarlı JSON hata gövdesi gider.
-
-**1 dk STAR:** “M0’da üç servis, üç Postgres, Flyway + validate; klasik Spring katmanı ile CRUD iskeletini oturttum.”
+Senin projede:  
+`OrderResponse` gibi record’lar var. Controller entity göndermez. İçeride tablo değişse bile dışarıdaki JSON aynı kalabilir.
 
 ---
 
-## 3) Database per Service & dağıtık veri
+### Soru 2
+**Controller, service, repository ne işe yarar?**
 
-### S11. Database per Service nedir? Neden?
+- Controller = kapıdan gelen HTTP isteği  
+- Service = iş kuralı  
+- Repository = veritabanı  
 
-**Örnek cevap:**
-Her servis yalnızca kendi DB’sine yazar/okur. Order, payment’in `payments` tablosuna JOIN atamaz.
-Neden: bağımsız deploy, şema sahipliği, bir servisin schema change’inin diğerini kırmaması.
-Bedeli: çapraz sorgu yok → rapor/history için CQRS veya event’lerden türetilmiş okuma modeli gerekir.
-
-### S12. Neden 2PC (iki fazlı commit) kullanmadın?
-
-**Örnek cevap:**
-“Sipariş Ver” order + payment + restaurant + delivery’yi ilgilendirir; dört ayrı Postgres. Tek `BEGIN/COMMIT` yok.
-2PC kilit tutar, coordinator SPOF olur, bulutta pratikte kabus. Bunun yerine **saga**: adım adım ilerler, bozulursa **compensate** (örn. `RefundPaymentCommand`).
-
-### S13. Senkron REST mi, asenkron Kafka mi?
-
-**Örnek cevap:**
-Gateway → servis senkron REST (istemci bekler). Servisler arası uzun iş akışı Kafka komut/event.
-Saga’da payment’i senkron çağırmadım; `ChargePaymentCommand` outbox → Kafka. Böylece restoran yavaşsa order thread’i kilitlenmez; durum makinesi event ile ilerler.
-
-### S14. Shared library’de entity paylaşmak neden antifpattern?
-
-**Örnek cevap:**
-`nefis-contracts` yalnızca **mesaj şeması** (command/event + topic adları). Domain entity paylaşmıyoruz.
-Entity paylaşmak gizli coupling’tir; bir servisin kolon değişimi herkesi kırar. Contract JAR = “JSON’un şekli”, tablo değil.
-
-**1 dk STAR:** “Dört kasa, tek transaction yok; bu yüzden saga + compensate seçtim, entity değil mesaj contract paylaştım.”
+Senin projede her serviste bu düzen aynı.  
+Örnek: `OrderController` → `OrderService` → `OrderRepository`.
 
 ---
 
-## 4) API Gateway & JWT (M1 + M4)
+### Soru 3
+**`@Transactional` nereye konur?**
 
-### S15. Gateway ne yapar, ne yapmaz?
+Service tarafına.  
+Controller’a koyma.
 
-**Örnek cevap:**
-Yapar: tek giriş (`:8080`), path’e göre route, JWT doğrulama, circuit breaker, tracing header.
-Yapmaz: sipariş iş kuralı, Postgres’e yazma, JSON’u business olarak yorumlama.
-Bizde `spring-cloud-starter-gateway` (WebFlux/Netty). İçeride Tomcat yok — WebMVC gateway ile karıştırılmaz.
+Neden?  
+Bir iş ya hep olsun ya hiç olmasın istiyorsan transaction service’te başlar.
 
-### S16. JWT’yi neden her serviste değil kapıda doğruladın?
-
-**Örnek cevap:**
-Policy tek yerde kalsın diye. `POST /api/customers` ve `POST /api/auth/login` açık; gerisi `Authorization: Bearer`.
-`customer-service` içindeki `JwtIssuer` token üretir; gateway validate eder. Backend’ler JWT parse etmez (lab basitleştirmesi).
-Prod’da defense-in-depth için servis içi auth da tartışılır; ben trade-off’u bilerek seçtim.
-
-### S17. Login akışını anlat
-
-**Örnek cevap:**
-1. `POST /api/customers` → müşteri oluşur  
-2. `POST /api/auth/login` `{ "email": "..." }` → `accessToken`  
-3. Sonraki istekler `Authorization: Bearer <token>`  
-4. Gateway Security config public path dışındakileri reddeder  
-
-Health biletsiz: `GET :8080/actuator/health`.
-
-### S18. Route tablosunda prefix strip yok — neden?
-
-**Örnek cevap:**
-Backend zaten `/api/orders/**` dinliyor. Gateway path’i olduğu gibi iletir; rewrite yok, hata ayıklaması kolay.
-URI IDE’de `localhost:8081`, Docker’da `http://order-service:8081` — config ile değişir, istemci bilmez.
-
-**1 dk STAR:** “Altı URL ezberletmemek ve JWT’yi tek kapıda tutmak için Spring Cloud Gateway koydum; iş kuralları içeride kaldı.”
+Senin örnek:  
+Saga başlarken sipariş + outbox satırı aynı transaction’da yazılıyor. Biri yazılıp diğeri yazılmazsa sistem bozulur.
 
 ---
 
-## 5) Kafka, Saga, Outbox, Idempotency (kritik tur)
+### Soru 4
+**Flyway ne işe yarar? Hibernate validate ne demek?**
 
-### S19. Komut ile event farkı?
+Flyway tabloları dosyadan kurar (`V1__...sql`).  
+Hibernate `validate` der: “Ben tablo yaratmam. Uyumsuzluk varsa ayağa kalkmam.”
 
-**Örnek cevap:**
-- **Komut** = “yap” → `ChargePaymentCommand`, `ReserveRestaurantCommand`
-- **Event** = “oldu” → `PaymentChargedEvent`, `RestaurantRejectedEvent`
-
-Orchestrator komut üretir, event dinler, bir sonraki adımı yazar.
-Topic’ler: `payment-commands` / `payment-events`, aynı pattern restaurant ve delivery’de.
-
-### S20. Orchestration vs choreography?
-
-**Örnek cevap:**
-**Orchestration:** tek yönetmen sırayı bilir — bizde `OrderSagaOrchestrator`.
-**Choreography:** her servis bir event görüp sonrakini tetikler; dağıtık ama akış okuması zor.
-Lab’te orchestration seçtim: compensate ve status geçişleri tek sınıfta görünür.
-
-### S21. Mutlu yol status makinesi?
-
-**Örnek cevap:**
-`ORDER_CREATED` / saga start → `AWAITING_PAYMENT` → (charged) `AWAITING_RESTAURANT` → (accepted) `AWAITING_DELIVERY` → (courier) `CONFIRMED`.
-
-Restoran red: `SAGA COMPENSATE` → `RefundPaymentCommand` → `CANCELLED` + `cancelReason`.
-
-Postman’da `forceRestaurantReject: true` veya `forceRestaurantAccept: true` ile deterministik test.
-
-### S22. Dual-write problemi nedir?
-
-**Örnek cevap:**
-“Önce DB’ye yaz, sonra `kafka.send`” dersen process arada ölürse: sipariş `AWAITING_PAYMENT` kalır, komut hiç gitmez — saga takılır.
-Ya da Kafka gitti DB rollback oldu — hayalet mesaj.
-
-### S23. Transactional Outbox nasıl çözer?
-
-**Örnek cevap:**
-Aynı transaction’da `orders` + `outbox_messages` yazılır (`OutboxEnqueuer`). COMMIT sonrası `OutboxPublisher` poll edip Kafka’ya taşır, `published_at` işaretler.
-Process send’den önce ölürse satır tabloda kalır; poller tekrar dener.
-Bizde outbox **order-service** tarafında (orchestrator komutları). Payment/restaurant/delivery hâlâ doğrudan send — bilerek scope.
-
-### S24. Outbox yetmez mi? Neden idempotent consumer?
-
-**Örnek cevap:**
-Kafka **at-least-once**: ACK olup `published_at` yazılmadan ölüm → aynı komut tekrar gider.
-Payment `processed_events` tablosunda `commandId` unique. İkinci kez gelirse yutulur, çift çekim olmaz.
-`IdempotentConsumer` + `PaymentCommandHandler` bunu uygular.
-
-### S25. Saga takılırsa (`AWAITING_PAYMENT`) ne yaparsın?
-
-**Örnek cevap:**
-`replayCurrentStep`: status aynı kalır, o adımın komutu outbox’a **yeni commandId** ile yeniden yazılır.
-Eski kopya aynı `commandId` ile gelirse payment processed_events yutar; yeni id ise bilinçli yeniden deneme.
-Operasyonel olarak Kafka UI’dan topic/consumer lag’e de bakarım.
-
-### S26. Topic key neden `orderId`?
-
-**Örnek cevap:**
-Aynı siparişin komut/event’leri aynı partition’a düşsün diye sıralı işlensin.
-Farklı order’lar parallel gidebilir. Key = partition affinity.
-
-### S27. CQRS burada ne?
-
-**Örnek cevap:**
-Write model: `orders` güncel durum (`CONFIRMED` vb.).
-Read model: `order_history_view` — film şeridi (hangi adım ne zaman).
-`GET /api/orders/{id}/history` rapor için; her seferinde dört servisi JOIN’lemezsin (zaten yapamazsın).
-
-**1 dk STAR:** “Saga yönetmeni order’da; komutları outbox’a yazdım, payment aynı commandId’yi iki kez yemedi; history ile akışı sonradan okudum.”
+Yani şema sürpriz yapmaz. Sen yönetirsin.
 
 ---
 
-## 6) Resilience & observability (M4)
+### Soru 5
+**Hata olunca ne yapıyorsun?**
 
-### S28. Circuit breaker ne zaman açılır?
+Serviste `ResourceNotFoundException` fırlatıyorum.  
+`RestExceptionHandler` bunu 404’e çeviriyor.
 
-**Örnek cevap:**
-Downstream (örn. restaurant-service) art arda hata/timeout verince Resilience4j devre açar; istekler bir süre direkt fail/fallback’e gider, hasta servisi ezmez.
-Gateway route’larında `CircuitBreaker` filter + `fallbackUri: forward:/fallback/...`.
-`FallbackController` kullanıcıya kontrollü cevap döner.
-
-### S29. Retry ile circuit breaker farkı?
-
-**Örnek cevap:**
-Retry: geçici hatayı tekrar dene (dikkat: ödemede idempotency şart).
-Circuit breaker: “yeter, bir süre çağırma” — cascading failure’ı keser.
-İkisini körlemesine birlikte kullanmak fırtına yaratır; policy bilinçli olmalı.
-
-### S30. Metrics vs logs vs traces?
-
-**Örnek cevap:**
-| Araç | Soru |
-| --- | --- |
-| Log | Bu istekte ne oldu? (metin) |
-| Prometheus/Grafana | Servis nabzı, hata oranı, latency (sayı) |
-| Zipkin | Bu tek sipariş isteği hangi servislerden geçti? (film) |
-
-Actuator + Micrometer metrik üretir; Zipkin dağıtık span birleştirir.
-
-### S31. Observability’yi mülakatta nasıl kanıtlarsın?
-
-**Örnek cevap:**
-“Compose’da Prometheus `:9090`, Grafana `:3000`, Zipkin `:9411`. Sipariş attım, Zipkin’de gateway → order → … zincirini gördüm; Grafana’da hata olunca panel kırmızıya döndü.”
-Lab dokümanı: `observability-lab.md`.
-
-**1 dk STAR:** “Kapıda sigorta (circuit breaker) ve sayaç/iz (Prometheus + Zipkin) koydum; fail olunca kör retry yerine görünür fallback.”
+Her controller’da try/catch yazmıyorum. Hata formatı tek yerden çıkıyor.
 
 ---
 
-## 7) Test piramidi (M5)
-
-### S32. Neden sadece Postman yetmez?
-
-**Örnek cevap:**
-Postman smoke insan bağımlı ve regresyonu garanti etmez. CI’da `./mvnw test` şart.
-Postman öğrenme UI’si; otomatik güvence test piramidi.
-
-### S33. Üç katmanı anlat
-
-**Örnek cevap:**
-1. **Unit** (`*Test`): Mockito ile service/orchestrator — hızlı, DB yok  
-2. **Contract / WireMock**: gateway’in beklediği HTTP şekli; gerçek servis ayakta olmadan  
-3. **IT / Testcontainers**: gerçek Postgres (ve gerektiğinde Kafka) — örn. `PaymentIdempotencyIT`, `OrderOutboxIT`
-
-### S34. Testcontainers neden embedded H2’den iyi?
-
-**Örnek cevap:**
-Prod Postgres; H2 SQL diyalekti ve tip farkı gizler. Flyway migration’ların gerçek motorunda geçmesi önemli.
-Trade-off: IT daha yavaş — bu yüzden piramit: çoğu birim, az ama kritik IT.
-
-### S35. Idempotency’yi nasıl test edersin?
-
-**Örnek cevap:**
-Aynı `commandId` ile komutu iki kez uygula; tek payment satırı / `processed_events` unique constraint.
-`PaymentIdempotencyIT` bunu container Postgres ile doğrular.
-
-**1 dk STAR:** “Öğrenirken Postman, güvence için Mockito + WireMock + Testcontainers; çift çekimi IT ile kilitledim.”
+**Bu bölümü bitince söyle:**  
+“Her serviste aynı katman düzeni var. Şemayı Flyway yönetiyor. Hataları merkezi handler’a veriyorum.”
 
 ---
 
-## 8) System design mini sorular
+## Bölüm B — Neden ayrı veritabanları?
 
-### S36. Bu sistemi sıfırdan tahtaya çiz
+### Soru 6
+**Database per Service ne demek?**
 
-**Çizim iskeleti (söyleyerek çiz):**
+Her servis yalnız kendi veritabanına bakar.  
+Order, payment tablosuna JOIN atamaz.
+
+İyi tarafı: servisler birbirinin şemasını kırmaz.  
+Zor tarafı: “her şeyi tek sorguda birleştir” diyemezsin.
+
+---
+
+### Soru 7
+**O zaman sipariş dört servisi ilgilendirince ne oluyor?**
+
+Tek büyük transaction yok.  
+2PC (iki fazlı commit) de istemedim. Kilitli ve ağır.
+
+Bunun yerine **saga** var:  
+Adım adım ilerle. Bir yer bozulursa geri al.
+
+Restoran reddederse ödeme iade edilir. Sipariş `CANCELLED` olur.
+
+---
+
+### Soru 8
+**Servisler birbirine REST mi diyor, Kafka mı?**
+
+Kullanıcı → gateway → servis: REST.  
+Uzun sipariş filmi: Kafka.
+
+Ödeme için order, payment’i senkron beklemiyor.  
+“Parayı çek” komutunu kuyruğa koyuyor. Cevap event olarak geliyor.
+
+---
+
+### Soru 9
+**`nefis-contracts` ne paylaşıyor?**
+
+Sadece mesajın şeklini.  
+“Şu JSON böyle görünür” dosyası.
+
+Tablo / entity paylaşmıyoruz.  
+Biri kolon değiştirince herkes kırılmasın diye.
+
+---
+
+**Bu bölümü bitince söyle:**  
+“Her servisin kendi kasası var. Ortak transaction yok. Bu yüzden saga ile adım adım gidiyoruz.”
+
+---
+
+## Bölüm C — Kapı (Gateway) ve bilet (JWT)
+
+### Soru 10
+**Gateway ne yapar?**
+
+Tek kapı.  
+İstek `/api/orders` ise order-service’e yollar.
+
+Ne yapmaz?  
+Sipariş kuralı yazmaz. Veritabanına dokunmaz.
+
+Bizde kütüphane: Spring Cloud Gateway.
+
+---
+
+### Soru 11
+**JWT’yi neden her serviste değil de kapıda kontrol ettin?**
+
+Kural tek yerde dursun diye.
+
+Açık kalanlar:
+- müşteri oluştur
+- login
+- health
+
+Gerisi: `Authorization: Bearer ...` lazım.
+
+Login’i `customer-service` yapıyor, bileti o basıyor.  
+Kapı bileti okuyor.
+
+---
+
+### Soru 12
+**Kullanıcı nasıl giriyor? (kısa anlat)**
+
+1. Müşteri oluştur  
+2. Login ol → token al  
+3. Sonraki isteklerde header’a token koy  
+
+Hepsi `localhost:8080` üzerinden.
+
+---
+
+**Bu bölümü bitince söyle:**  
+“Dışarı tek kapı görüyor. Bilet kapıda bakılıyor. İçerideki servisler işine bakıyor.”
+
+---
+
+## Bölüm D — Saga, Kafka, outbox (en önemli kısım)
+
+Bunu parçala. Bir oturuşta hepsini yutma.
+
+### Soru 13
+**Komut ile event farkı ne?**
+
+Komut = “yap”  
+Örnek: `ChargePaymentCommand` → parayı çek.
+
+Event = “oldu”  
+Örnek: `PaymentChargedEvent` → para çekildi.
+
+Yönetmen komut yollar.  
+Event gelince bir sonraki adıma geçer.
+
+---
+
+### Soru 14
+**Yönetmen kim? Orchestration ne demek?**
+
+Yönetmen: `OrderSagaOrchestrator` (order-service içinde).
+
+Orchestration = sıra tek yerde belli.  
+Payment, restaurant, delivery birbirini aramaz. Yönetmeni dinler.
+
+(Diğer stil choreography: herkes birbirini tetikler. Biz onu seçmedik.)
+
+---
+
+### Soru 15
+**Mutlu yol nasıl ilerliyor?**
+
+Kabaca:
+
+1. Sipariş oluştu  
+2. `AWAITING_PAYMENT` — ödeme bekleniyor  
+3. Ödeme oldu → restoran bekleniyor  
+4. Restoran kabul → kurye bekleniyor  
+5. Kurye atandı → `CONFIRMED`
+
+Postman’da “Sipariş Ver” bunu başlatıyor.
+
+---
+
+### Soru 16
+**Restoran reddederse ne oluyor?**
+
+Compensate = geri alma.
+
+Restoran red event’i gelir.  
+Yönetmen “parayı iade et” komutu yazar.  
+Sipariş `CANCELLED` olur.
+
+Denemek için: `forceRestaurantReject: true`.
+
+---
+
+### Soru 17
+**Dual-write problemi ne? (önemli)**
+
+Kötü yol:
+1. Siparişi Postgres’e yaz  
+2. Sonra Kafka’ya gönder  
+
+Arada process ölürse ne olur?  
+Sipariş “ödeme bekliyor” kalır. Ama mesaj hiç gitmemiş olabilir. Film takılır.
+
+---
+
+### Soru 18
+**Outbox bunu nasıl çözer?**
+
+Aynı deftere, aynı anda iki satır yaz:
+- sipariş
+- outbox mesajı
+
+İkisi aynı transaction. Ya ikisi de kalır, ya hiçbiri.
+
+Sonra bir poller (`OutboxPublisher`) outbox’taki satırı Kafka’ya taşır.
+
+Yani önce defter, sonra kuyruk.
+
+---
+
+### Soru 19
+**Peki outbox yetmiyor mu? Neden `processed_events`?**
+
+Kafka mesajı bazen birden fazla gelebilir.  
+“En az bir kez” teslimat var.
+
+Payment aynı `commandId`’yi ikinci kez görürse yutar.  
+Tablo: `processed_events`.
+
+Yoksa para iki kez çekilebilir.
+
+Kısaca:
+- Outbox → “mesaj kaybolmasın”  
+- Idempotency → “mesaj iki gelirse iş iki olmasın”
+
+---
+
+### Soru 20
+**Sipariş `AWAITING_PAYMENT`’te takılırsa ne yaparsın?**
+
+`replayCurrentStep` var.  
+Status aynı kalır. O adımın komutu outbox’a yeniden yazılır.
+
+Ayrıca Kafka UI’dan topic’e ve consumer’a bakarsın: mesaj gitmiş mi, biri okumuş mu?
+
+---
+
+### Soru 21
+**History / CQRS burada ne?**
+
+`orders` tablosu = siparişin şu anki hali (`CONFIRMED` gibi).  
+`order_history_view` = film şeridi (hangi adım ne zaman).
+
+Güncel durum bir şey. Hikâye başka şey.  
+İkisini ayırdık.
+
+---
+
+**Bu bölümü bitince söyle (ezber cümle):**  
+“Siparişi yönetmen yönetiyor. Komutu önce outbox’a yazıyoruz, sonra Kafka’ya. Payment aynı komutu iki kez işlemiyor. Restoran reddederse parayı iade edip iptal ediyoruz.”
+
+---
+
+## Bölüm E — Sigorta ve gözlem
+
+### Soru 22
+**Circuit breaker ne işe yarar?**
+
+Sigorta.
+
+Bir servis art arda bozulunca kapı bir süre onu ezmez.  
+İstekleri fallback’e düşürür.
+
+Bizde bu gateway route’larında var.
+
+---
+
+### Soru 23
+**Grafana, Zipkin, log farkı ne?**
+
+Çok basit:
+
+- **Log** → “bu istekte ne yazıldı?”  
+- **Grafana** → “servis genel olarak nasıl? hata arttı mı?”  
+- **Zipkin** → “şu bir sipariş hangi servislerden geçti?”
+
+Sayı ayrı. Tek isteğin filmi ayrı.
+
+---
+
+**Bu bölümü bitince söyle:**  
+“Kapıda sigorta var. Sayıyı Grafana’da, bir isteğin yolunu Zipkin’de bakıyorum.”
+
+---
+
+## Bölüm F — Test
+
+### Soru 24
+**Neden sadece Postman yetmez?**
+
+Postman öğrenmek ve elle denemek için güzel.  
+Ama her commit’te insan tıklamaz.
+
+Otomatik test lazım: `./mvnw test`.
+
+---
+
+### Soru 25
+**Testleri nasıl ayırdın?**
+
+Üç kat:
+
+1. **Unit** — Mockito ile hızlı, küçük  
+2. **WireMock** — “karşı taraf böyle cevap verse”  
+3. **Testcontainers** — gerçek Postgres ayağa kalkar  
+
+Örnek: ödeme iki kez gelmesin diye IT yazdık.
+
+---
+
+**Bu bölümü bitince söyle:**  
+“Öğrenirken Postman kullandım. Güvence için unit + WireMock + Testcontainers yazdım.”
+
+---
+
+## Bölüm G — Tahtada çiz / dürüst sorular
+
+### Soru 26
+**Sistemi tahtaya çiz deseler?**
+
+Şunu çizmen yeter:
 
 ```
-Client → API Gateway (JWT, CB, trace)
-           ├ customer  → PG
-           ├ restaurant → PG
-           ├ order → PG + outbox → Kafka ← payment/restaurant/delivery
-           ├ payment → PG + processed_events
-           ├ delivery → PG
-           └ notification → PG (mock SMS)
+Kullanıcı → Gateway (bilet + sigorta)
+              ├ customer
+              ├ restaurant
+              ├ order  → outbox → Kafka
+              ├ payment (processed_events)
+              ├ delivery
+              └ notification
 ```
 
-Sonra ağızdan failure mode: restoran red, outbox poller gecikmesi, duplicate message.
-
-### S37. Notification neden saga’ya bağlı değil?
-
-**Örnek cevap:**
-Lab scope: notification CRUD + konsola `[MOCK SMS]`. Kafka consumer / saga adımı yok.
-İleride `OrderConfirmed` event’ini dinleyen consumer eklenebilir — bilerek bırakılmış boşluk.
-
-### S38. Ne eksik bıraktın? (dürüstlük sorusu)
-
-**Örnek cevap:**
-- Restaurant/delivery’de henüz `processed_events` yok (ders payment’te)
-- Her yerde outbox yok
-- Servis-içi JWT yok
-- Strangler Fig / `review-service` (M6) opsiyonel kaldı
-- Spring Cloud Contract / Pact yok; WireMock ile simülasyon var
-- K8s yok; Docker Compose lab
-
-Eksik = yalan değil; **scope bilinci** artıdır.
-
-### S39. Consistency model’in ne?
-
-**Örnek cevap:**
-Saga boyunca **eventual consistency**. Kullanıcı kısa süre `AWAITING_*` görür; sonunda `CONFIRMED` veya `CANCELLED`.
-Strong consistency tek DB transaction’ı ile sınırlı (outbox + order aynı TX).
-
-### S40. “Ödeme iki kez çekildi” bug’ını nasıl debug edersin?
-
-**Örnek cevap:**
-1. `processed_events`’te aynı `commandId` var mı?  
-2. Kafka UI: `payment-commands`’ta duplicate mesaj / farklı `commandId` mi?  
-3. Outbox’ta aynı payload birden fazla mı publish olmuş?  
-4. Replay yeni `commandId` üretmiş olabilir — bu bilinçli yeniden deneme; idempotency key iş kuralına göre seçilmeli  
+Sonra ağızdan ekle:  
+“Restoran red olursa iade var. Mesaj iki gelirse payment yutar.”
 
 ---
 
-## 9) Hızlı “neden böyle?” kartları
+### Soru 27
+**Ne eksik bıraktın?** (bu soru artıdır)
 
-Ezber kartı gibi oku:
+Dürüst söyle:
 
-| Konu | Tek cümle |
+- Restaurant ve delivery’de henüz `processed_events` yok  
+- Her serviste outbox yok  
+- Notification henüz saga’ya bağlı değil  
+- Kubernetes yok; Docker Compose ile lab  
+- Strangler Fig (M6) opsiyonel kaldı  
+
+“Hepsini production sanmayın; bilinçli sadeleştirdim” demek seni güçlü gösterir.
+
+---
+
+### Soru 28
+**“Ödeme iki kez çekildi” bug’ını nasıl ararsın?**
+
+Sırayla:
+
+1. `processed_events` içinde aynı `commandId` var mı?  
+2. Kafka UI’da aynı komut iki kez görünüyor mu?  
+3. Outbox aynı mesajı iki kez mi basmış?  
+4. Replay yeni id mi üretmiş?
+
+Tek cümleyle bitir:  
+“Önce iş etkisinin iki olup olmadığına, sonra mesajın iki gelip gelmediğine bakarım.”
+
+---
+
+## Günde nasıl çalış?
+
+| Gün | Ne bak |
 | --- | --- |
-| DB per service | JOIN yok, sahiplik var |
-| Gateway | Tek kapı; iş kuralı değil |
-| JWT kapıda | Policy tek yerde |
-| Saga | Dağıtık işi adım + compensate |
-| Orchestration | Yönetmen tek sınıf |
-| Outbox | Önce aynı TX’e yaz, sonra Kafka |
-| Idempotency | At-least-once’ı yut |
-| CQRS history | Güncel durum ≠ film şeridi |
-| Circuit breaker | Hasta servisi ezme |
-| Zipkin | Bir isteğin yolu |
-| Testcontainers | Gerçek Postgres’te migration |
+| 1 | Bölüm A + B (Soru 1–9) |
+| 2 | Bölüm C (kapı / JWT) |
+| 3 | Bölüm D soru 13–16 (saga yolu) |
+| 4 | Bölüm D soru 17–21 (outbox + idempotency) |
+| 5 | Bölüm E + F |
+| 6 | Bölüm G + sesli 5 dakika tanıtım |
+
+Her günün sonunda sadece **bir** ezber cümlesini sesli tekrarla.
 
 ---
 
-## 10) Mock mülakat — 8 dakika script
+## 5 dakikalık sesli prova
 
-Kronometre tut, sesli söyle:
+Kronometre aç. Şunları sırayla söyle:
 
-1. **(60 sn)** Proje tanıtımı (§0)  
-2. **(90 sn)** Sipariş mutlu yol + status’ler  
-3. **(90 sn)** Dual-write → outbox → neden processed_events  
-4. **(60 sn)** Restoran red / compensate  
-5. **(60 sn)** Gateway + JWT  
-6. **(60 sn)** Test + observability + “ne eksik?”  
+1. Üç parçalı proje tanıtımı  
+2. Sipariş mutlu yol (status’ler)  
+3. Outbox neden var  
+4. `processed_events` neden var  
+5. Restoran red olursa ne olur  
+6. Ne eksik bıraktım  
 
-Bitince kendi kaydını dinle: “eee”, “şey”, boş kavram var mı? Her boşluğu bir dosya adına bağla (`OrderSagaOrchestrator`, `OutboxPublisher`, `IdempotentConsumer`).
-
----
-
-## 11) Kendini sınama — cevapları kapat
-
-Aşağıdakileri kağıda 3–5 cümle yaz, sonra bu dosyayla karşılaştır:
-
-1. Database per Service’in bedeli nedir?  
-2. Outbox ile idempotent consumer aynı problemi mi çözer?  
-3. Gateway’e iş kuralı koyarsan ne bozulur?  
-4. `AWAITING_PAYMENT`’te takılı siparişi nasıl kurtarırsın?  
-5. Neden 2PC değil saga?  
-6. Unit test ile Testcontainers’ı ne zaman seçersin?  
-7. Komut/event ayrımı olmadan ne kaybedersin?  
-8. Metrics’te görünen ama Zipkin’de görünmeyen problem nasıl olur?  
+Takılırsan normal. O soruya dön, bir tur daha söyle. Ezber yarışı değil.
 
 ---
 
-## 12) İleride sorulursa — kısa ek notlar
-
-Bunları projede derin işlemedin; “biliyorum / bakıyorum” seviyesi yeterli:
-
-- **Choreography saga** trade-off’ları  
-- **Inbox pattern** (consumer tarafı outbox benzeri)  
-- **Exactly-once** miti vs idempotent business effect  
-- **Kafka consumer group / rebalance**  
-- **Virtual threads (Java 21)** gateway WebFlux ile farkı  
-- **Strangler Fig** ile monolith’ten parçalama (M6)  
-
-Cevap kalıbı: “Lab’te X’i yaptım; Y’yi bilerek basitleştirdim; production’da Z’yi eklerdim.”
-
----
-
-İyi çalışmalar. Takıldığın soruyu “şunu mock mülakat gibi sor” diye açman yeterli; cevabı birlikte sesli formatta sıkılaştırırız.
+Takıldığın bir soruyu seçip “bunu birlikte sesli cevaplayalım” dersen, o soruyu daha da kısa hale getiririz.
