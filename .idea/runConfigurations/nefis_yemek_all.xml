@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Nefis Yemek: tum servisler" type="CompoundRunConfigurationType">
+    <toRun name="api-gateway" type="Application" />
+    <toRun name="customer-service" type="Application" />
+    <toRun name="restaurant-service" type="Application" />
+    <toRun name="order-service" type="Application" />
+    <toRun name="payment-service" type="Application" />
+    <toRun name="delivery-service" type="Application" />
+    <toRun name="notification-service" type="Application" />
+    <method v="2" />
+  </configuration>
+</component>

@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="payment-service" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="com.nefisyemek.payment.PaymentServiceApplication" />
+    <module name="payment-service" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/payment-service" />
+    <shortenClasspath name="ARGS_FILE" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

@@ -1,0 +1,38 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+.flattened-pom.xml
+
+# IDE
+.idea/*
+!.idea/runConfigurations/
+!.idea/runConfigurations/**
+!.idea/misc.xml
+!.idea/compiler.xml
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs & runtime
+*.log
+logs/
+hs_err_pid*
+
+# Env / secrets
+.env
+.env.local
+*.pem
+
+# Test / coverage
+.mvn/timing.properties
+coverage/
+*.exec

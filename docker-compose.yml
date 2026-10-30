@@ -1,0 +1,392 @@
+# Nefis Yemek — Milestone 4
+#
+# Database per Service: her iş yeteneğinin kendi PostgreSQL instance'ı var.
+# Dış trafik yalnızca api-gateway :8080 üzerinden girer (JWT kapıda).
+# Kafka KRaft (Zookeeper yok): IntelliJ localhost:9092, container içi kafka:29092.
+#
+# Host portlar:
+#   api-gateway         8080
+#   order-service       8081    order-db          5436
+#   payment-service     8082    payment-db        5434
+#   restaurant-service  8083    restaurant-db     5435
+#   customer-service    8084    customer-db       5437
+#   delivery-service    8085    delivery-db       5438
+#   notification-service 8086   notification-db   5439
+#   kafka               9092
+#   kafka-ui            8090    http://localhost:8090
+#   prometheus          9090    http://localhost:9090
+#   grafana             3000    http://localhost:3000  admin/admin
+#   zipkin              9411    http://localhost:9411
+#
+# 5433 kullanılmıyor (socialflow vs.).
+# `docker compose up` → Postgres + Kafka + Kafka UI + Prometheus + Grafana + Zipkin.
+# Tam stack: `docker compose --profile apps up --build`
+
+name: nefis-yemek
+
+x-postgres: &postgres
+  image: postgres:16-alpine
+  restart: unless-stopped
+
+services:
+  order-db:
+    <<: *postgres
+    container_name: nefis-order-db
+    environment:
+      POSTGRES_DB: orderdb
+      POSTGRES_USER: order
+      POSTGRES_PASSWORD: order
+    ports:
+      - "5436:5432"
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U order -d orderdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  payment-db:
+    <<: *postgres
+    container_name: nefis-payment-db
+    environment:
+      POSTGRES_DB: paymentdb
+      POSTGRES_USER: payment
+      POSTGRES_PASSWORD: payment
+    ports:
+      - "5434:5432"
+    volumes:
+      - payment-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment -d paymentdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  restaurant-db:
+    <<: *postgres
+    container_name: nefis-restaurant-db
+    environment:
+      POSTGRES_DB: restaurantdb
+      POSTGRES_USER: restaurant
+      POSTGRES_PASSWORD: restaurant
+    ports:
+      - "5435:5432"
+    volumes:
+      - restaurant-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U restaurant -d restaurantdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  customer-db:
+    <<: *postgres
+    container_name: nefis-customer-db
+    environment:
+      POSTGRES_DB: customerdb
+      POSTGRES_USER: customer
+      POSTGRES_PASSWORD: customer
+    ports:
+      - "5437:5432"
+    volumes:
+      - customer-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customer -d customerdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  delivery-db:
+    <<: *postgres
+    container_name: nefis-delivery-db
+    environment:
+      POSTGRES_DB: deliverydb
+      POSTGRES_USER: delivery
+      POSTGRES_PASSWORD: delivery
+    ports:
+      - "5438:5432"
+    volumes:
+      - delivery-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U delivery -d deliverydb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  notification-db:
+    <<: *postgres
+    container_name: nefis-notification-db
+    environment:
+      POSTGRES_DB: notificationdb
+      POSTGRES_USER: notification
+      POSTGRES_PASSWORD: notification
+    ports:
+      - "5439:5432"
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification -d notificationdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:3.9.1
+    hostname: kafka
+    container_name: nefis-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  # Topic / mesaj / consumer group tarayıcısı.
+  # Gateway :8080 dolu olduğu için UI host portu 8090.
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.3.0
+    container_name: nefis-kafka-ui
+    ports:
+      - "8090:8080"
+    environment:
+      DYNAMIC_CONFIG_ENABLED: "true"
+      KAFKA_CLUSTERS_0_NAME: nefis-yemek
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      kafka: { condition: service_healthy }
+    restart: unless-stopped
+
+  zipkin:
+    image: openzipkin/zipkin:3.4.4
+    container_name: nefis-zipkin
+    ports:
+      - "9411:9411"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: nefis-prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: nefis-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_DEFAULT_THEME: light
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  order-service:
+    profiles: ["apps"]
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: order-service } }
+    image: nefis-yemek/order-service:0.1.0
+    container_name: nefis-order-service
+    ports: ["8081:8081"]
+    environment:
+      SERVER_PORT: 8081
+      SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/orderdb
+      SPRING_DATASOURCE_USERNAME: order
+      SPRING_DATASOURCE_PASSWORD: order
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+    depends_on:
+      order-db: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  payment-service:
+    profiles: ["apps"]
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: payment-service } }
+    image: nefis-yemek/payment-service:0.1.0
+    container_name: nefis-payment-service
+    ports: ["8082:8082"]
+    environment:
+      SERVER_PORT: 8082
+      SPRING_DATASOURCE_URL: jdbc:postgresql://payment-db:5432/paymentdb
+      SPRING_DATASOURCE_USERNAME: payment
+      SPRING_DATASOURCE_PASSWORD: payment
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+    depends_on:
+      payment-db: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  restaurant-service:
+    profiles: ["apps"]
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: restaurant-service } }
+    image: nefis-yemek/restaurant-service:0.1.0
+    container_name: nefis-restaurant-service
+    ports: ["8083:8083"]
+    environment:
+      SERVER_PORT: 8083
+      SPRING_DATASOURCE_URL: jdbc:postgresql://restaurant-db:5432/restaurantdb
+      SPRING_DATASOURCE_USERNAME: restaurant
+      SPRING_DATASOURCE_PASSWORD: restaurant
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+    depends_on:
+      restaurant-db: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  customer-service:
+    profiles: ["apps"]
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: customer-service } }
+    image: nefis-yemek/customer-service:0.1.0
+    container_name: nefis-customer-service
+    ports: ["8084:8084"]
+    environment:
+      SERVER_PORT: 8084
+      SPRING_DATASOURCE_URL: jdbc:postgresql://customer-db:5432/customerdb
+      SPRING_DATASOURCE_USERNAME: customer
+      SPRING_DATASOURCE_PASSWORD: customer
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+      NEFIS_JWT_SECRET: "nefis-yemek-dev-jwt-secret-do-not-use-in-prod!"
+    depends_on:
+      customer-db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  delivery-service:
+    profiles: ["apps"]
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: delivery-service } }
+    image: nefis-yemek/delivery-service:0.1.0
+    container_name: nefis-delivery-service
+    ports: ["8085:8085"]
+    environment:
+      SERVER_PORT: 8085
+      SPRING_DATASOURCE_URL: jdbc:postgresql://delivery-db:5432/deliverydb
+      SPRING_DATASOURCE_USERNAME: delivery
+      SPRING_DATASOURCE_PASSWORD: delivery
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+    depends_on:
+      delivery-db: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  notification-service:
+    profiles: ["apps"]
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: notification-service } }
+    image: nefis-yemek/notification-service:0.1.0
+    container_name: nefis-notification-service
+    ports: ["8086:8086"]
+    environment:
+      SERVER_PORT: 8086
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notificationdb
+      SPRING_DATASOURCE_USERNAME: notification
+      SPRING_DATASOURCE_PASSWORD: notification
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+    depends_on:
+      notification-db: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  api-gateway:
+    profiles: ["apps"]
+    build: { context: ., dockerfile: Dockerfile, args: { MODULE: api-gateway } }
+    image: nefis-yemek/api-gateway:0.1.0
+    container_name: nefis-api-gateway
+    ports: ["8080:8080"]
+    environment:
+      SERVER_PORT: 8080
+      ORDER_SERVICE_URI: http://order-service:8081
+      PAYMENT_SERVICE_URI: http://payment-service:8082
+      RESTAURANT_SERVICE_URI: http://restaurant-service:8083
+      CUSTOMER_SERVICE_URI: http://customer-service:8084
+      DELIVERY_SERVICE_URI: http://delivery-service:8085
+      NOTIFICATION_SERVICE_URI: http://notification-service:8086
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+      NEFIS_JWT_SECRET: "nefis-yemek-dev-jwt-secret-do-not-use-in-prod!"
+    depends_on:
+      order-service: { condition: service_healthy }
+      payment-service: { condition: service_healthy }
+      restaurant-service: { condition: service_healthy }
+      customer-service: { condition: service_healthy }
+      delivery-service: { condition: service_healthy }
+      notification-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  order-db-data:
+  payment-db-data:
+  restaurant-db-data:
+  customer-db-data:
+  delivery-db-data:
+  notification-db-data:

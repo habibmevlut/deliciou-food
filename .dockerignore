@@ -1,0 +1,11 @@
+**/target
+**/.git
+**/.idea
+**/.vscode
+**/*.iml
+**/logs
+**/.env
+.git
+.idea
+README.md
+PROJECT_BRIEF.md
